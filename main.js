@@ -2,11 +2,21 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
 import { OBJECTS, OBJECT_GROUPS } from './geography.js';
-import { LAYERS, buildZoneIds, classify, normalizeLon, pointClimate, zoneFor, zoneIndex } from './climate.js';
+import {
+  LAYERS,
+  buildBeltGradient,
+  buildZoneIds,
+  classify,
+  normalizeLon,
+  pointClimate,
+  zoneFor,
+  zoneIndex,
+} from './climate.js';
 
 const MARS_RADIUS_M = 3389500;
 const HIST_BIN_M = 10;
 const ZONE_STEP = 2; // zone texture resolution = elevation grid / ZONE_STEP
+const BELT_GRADIENT_ROWS = 1024;
 const MINOR_LABEL_DISTANCE = 2.3; // camera distance below which rank-2 labels are shown
 const CLICK_SLOP_PX = 5;
 
@@ -75,6 +85,8 @@ const fragmentShader = /* glsl */ `
   uniform sampler2D uPalette;
   uniform float uOverlayOpacity;
   uniform float uSelectedId;
+  uniform sampler2D uBeltGradient;
+  uniform float uBeltMode;
 
   varying vec2 vTex;
   varying vec3 vWorldPos;
@@ -139,22 +151,35 @@ const fragmentShader = /* glsl */ `
     float wet = smoothstep(-fw, fw, depth);
     vec3 color = mix(land, water, wet);
 
-    // Zone overlay: palette color per zone id, outlined where the id changes. Neighbour
-    // samples are one screen pixel apart (at least one texel) so outlines stay thin.
+    // Zone overlay. Belts take their colour from a latitude gradient with soft borders; the other
+    // layers use one palette colour per zone id, outlined where the id changes. Neighbour samples are
+    // one screen pixel apart (at least one texel) so outlines stay thin.
     vec2 px = max(uZoneTexel, fwidth(vTex));
     float id = zoneAt(vTex);
     float edge = step(0.5,
       abs(zoneAt(vTex + vec2(px.x, 0.0)) - id) + abs(zoneAt(vTex - vec2(px.x, 0.0)) - id) +
       abs(zoneAt(vTex + vec2(0.0, px.y)) - id) + abs(zoneAt(vTex - vec2(0.0, px.y)) - id));
-    vec3 zoneColor = texture2D(uPalette, vec2((id + 0.5) / 256.0, 0.5)).rgb;
+    vec3 paletteColor = texture2D(uPalette, vec2((id + 0.5) / 256.0, 0.5)).rgb;
+    vec3 zoneColor = mix(paletteColor, texture2D(uBeltGradient, vec2(0.5, vTex.y)).rgb, uBeltMode);
     float hasZone = step(0.5, id) * step(0.001, uOverlayOpacity);
     float selected = step(0.5, uSelectedId) * (1.0 - step(0.5, abs(id - uSelectedId)));
-    float dimmed = step(0.5, uSelectedId) * (1.0 - selected);
+    // Brightening the selected zone would put a hard step back into the belt gradient, so belts
+    // mark the selection with the dashed outline only.
+    float emphasis = step(0.5, uSelectedId) * (1.0 - uBeltMode);
     float shade = 0.3 + 0.7 * mix(landDiffuse, waterDiffuse, wet);
-    float alpha = clamp(uOverlayOpacity * (1.0 + 0.6 * selected - 0.3 * dimmed), 0.0, 0.92);
+    float alpha = clamp(uOverlayOpacity * (1.0 + emphasis * (0.6 * selected - 0.3 * (1.0 - selected))), 0.0, 0.92);
     color = mix(color, zoneColor * shade, alpha * hasZone);
-    vec3 edgeColor = mix(zoneColor * 0.3, vec3(1.0), selected);
-    color = mix(color, edgeColor, edge * hasZone * clamp(0.35 + uOverlayOpacity + selected, 0.0, 0.95));
+    float outline = edge * hasZone * (1.0 - selected) * (1.0 - uBeltMode);
+    color = mix(color, zoneColor * 0.3, outline * clamp(0.35 + uOverlayOpacity, 0.0, 0.95));
+
+    // Dashed white outline around the selected zone: a checkerboard in map space (longitude scaled by
+    // cos(lat) so dashes keep their length near the poles). Cells are ~6 px, snapped to a power of two
+    // so the dashes stay attached to the map while it rotates.
+    float latDeg = 90.0 - vTex.y * 180.0;
+    float lonDeg = vTex.x * 360.0 * max(cos(radians(latDeg)), 0.05);
+    float cell = pow(2.0, ceil(log2(max(fwidth(vTex.y) * 180.0 * 6.0, 1e-4))));
+    float dash = mod(floor(lonDeg / cell) + floor(latDeg / cell), 2.0);
+    color = mix(color, vec3(1.0), edge * selected * hasZone * dash * 0.95);
 
     // Thin dusty atmosphere at the limb.
     float rim = pow(1.0 - max(dot(up, V), 0.0), 3.0);
@@ -293,7 +318,23 @@ function createZoneTextures(data) {
   }
   ids.wrapS = THREE.RepeatWrapping;
   ids.wrapT = THREE.ClampToEdgeWrapping;
-  return { ids, palette, texel: new THREE.Vector2(1 / w, 1 / h) };
+
+  // Belt colours never change, so the gradient is built once. Linear filtering keeps it smooth.
+  const gradient = new THREE.DataTexture(
+    buildBeltGradient(BELT_GRADIENT_ROWS),
+    1,
+    BELT_GRADIENT_ROWS,
+    THREE.RGBAFormat,
+    THREE.UnsignedByteType,
+  );
+  gradient.magFilter = THREE.LinearFilter;
+  gradient.minFilter = THREE.LinearFilter;
+  gradient.generateMipmaps = false;
+  gradient.wrapS = THREE.ClampToEdgeWrapping;
+  gradient.wrapT = THREE.ClampToEdgeWrapping;
+  gradient.needsUpdate = true;
+
+  return { ids, palette, gradient, texel: new THREE.Vector2(1 / w, 1 / h) };
 }
 
 // ---------------------------------------------------------------------------
@@ -472,6 +513,8 @@ async function main() {
       uPalette: { value: zoneTextures.palette },
       uOverlayOpacity: { value: 0 },
       uSelectedId: { value: 0 },
+      uBeltGradient: { value: zoneTextures.gradient },
+      uBeltMode: { value: 0 },
     },
   });
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(1, 512, 256), material));
@@ -498,6 +541,7 @@ async function main() {
   function applyLayer() {
     layer = ui.layer.value;
     legendHighlight = 0;
+    material.uniforms.uBeltMode.value = layer === 'belts' ? 1 : 0;
     const zones = LAYERS[layer]?.zones ?? [];
     const pal = zoneTextures.palette.image.data;
     pal.fill(0);

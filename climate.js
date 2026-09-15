@@ -209,6 +209,43 @@ export function pointClimate(c) {
   };
 }
 
+const BELT_BLEND_FRACTION = 0.1;
+const hexToRgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const smoothstep = (a, b, x) => {
+  const t = Math.min(Math.max((x - a) / (b - a), 0), 1);
+  return t * t * (3 - 2 * t);
+};
+
+// Belt colours by latitude with soft borders, as RGBA rows (row 0 = 90°N). Each blend starts 10% of
+// a belt's latitude span before the border and ends 10% of the neighbour's span past it. Visual only:
+// classification stays sharp.
+export function buildBeltGradient(rows = 1024) {
+  const northToSouth = [...LATITUDE_ZONES].sort((a, b) => b.lat[1] - a.lat[1]);
+  const borders = northToSouth.slice(1).map((south, i) => {
+    const north = northToSouth[i];
+    const lat = south.lat[1];
+    return {
+      top: lat + BELT_BLEND_FRACTION * (north.lat[1] - north.lat[0]),
+      bottom: lat - BELT_BLEND_FRACTION * (south.lat[1] - south.lat[0]),
+      north: hexToRgb(north.color),
+      south: hexToRgb(south.color),
+    };
+  });
+
+  const out = new Uint8Array(rows * 4);
+  for (let row = 0; row < rows; row++) {
+    const lat = 90 - ((row + 0.5) * 180) / rows;
+    let rgb = hexToRgb(latitudeZone(lat).color);
+    const border = borders.find((b) => lat > b.bottom && lat < b.top);
+    if (border) {
+      const t = smoothstep(border.bottom, border.top, lat);
+      rgb = border.south.map((v, k) => v + (border.north[k] - v) * t);
+    }
+    out.set([...rgb.map(Math.round), 255], row * 4);
+  }
+  return out;
+}
+
 // Zone index per texel for an overlay layer, sampled every `step` source pixels.
 // Row 0 is 90°N and column 0 is 0°E, like the elevation grid.
 export function buildZoneIds({ elev, width, height }, seaLevel, layer, step = 2) {
