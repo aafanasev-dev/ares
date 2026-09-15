@@ -7,6 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 An interactive 3D globe of an imaginary ocean planet ("Ares") built on real Mars MOLA topography. The world is
 described in `planet_geography.md`: Mars at 1.02 AU, a 1 bar atmosphere, and sea level at +2,000 m above the Mars
 datum. The globe draws the climate zones and landmarks from that description, and clicking a place shows its weather.
+A time panel (day of year and time of day, set to real Mars "now" on load) lights the globe with the real sun, so
+the night side is in shadow, and the info panel shows a possible current weather for that moment.
 
 It is a static site: vanilla ES modules with three.js 0.170.0 loaded from the jsdelivr CDN through the import map in
 `index.html`. There is no build step, package manager, linter or test suite.
@@ -22,8 +24,8 @@ python3 tools/prepare_data.py          # regenerate data/elevation.{bin,json} fr
 
 `fetch()` does not work from `file://`, so always open the page through a server.
 
-`climate.js` and `geography.js` import nothing from three.js or the DOM, so they run under Node. That is the
-quickest way to check a change to zones or climate numbers:
+`climate.js`, `astro.js` and `geography.js` import nothing from three.js or the DOM, so they run under Node. That is
+the quickest way to check a change to zones, climate numbers or the calendar:
 
 ```sh
 node -e "import('./climate.js').then(({ classify, pointClimate }) => {
@@ -33,6 +35,13 @@ node -e "import('./climate.js').then(({ classify, pointClimate }) => {
 ```
 
 Expected result: Tharsis plateau steppe, Montane, about 10 °C and 0.82 bar, matching §3.1 of the text.
+
+```sh
+node -e "import('./astro.js').then(({ marsNow, solFromLs }) => {
+  console.log(marsNow(new Date('2024-11-12T12:00Z')));   // start of Mars Year 38: Ls ≈ 0
+  console.log(solFromLs(270) - solFromLs(180));           // sols from Ls 180 to 270
+})"
+```
 
 ## Architecture
 
@@ -73,6 +82,24 @@ Rules for `REGIONS`:
 Temperature drops 2.5 K per km of land altitude, and pressure is `1013 hPa · exp(−alt / 22.3 km)`. The treeline
 and snowline are given at the equator (7 and 11 km) and moved with latitude to the height of the same annual mean
 temperature (`vegetationLines`).
+
+**Time: `astro.js` and `momentWeather`.**
+- `marsNow()` is real Mars's Ls and Mars Coordinated Time (Mars24, Allison & McEwen 2000). The planet's own orbit
+  (`PLANET.SEMI_MAJOR_AU`, `ECCENTRICITY`, `SOLS_PER_YEAR`…) is placed at the same Ls, so `solFromLs`/`orbitAt`
+  convert between Ls and the 366-sol year. Sol 0 starts at Ls 0°. Times of day are Mars hours (24 per sol).
+- `sunAt(sol, mtcHours)` gives declination, subsolar longitude (with the equation of time) and distance.
+  The time panel's hour slider holds minutes of MTC, the time at 0°E.
+- `momentWeather(c, pointClimate(c), sun)` spreads the annual climate over the year and the day:
+  - Seasonal temperature follows daily insolation through a lagged response (20 sols land, 45 water), scaled so
+    its extremes equal `tempSummer`/`tempWinter`. Eccentricity makes the southern summer short without special cases.
+  - The daily swing (`diurnal`) is scaled by day length, so it vanishes in polar night and polar day.
+  - `rainSeason: {type, strength}` on belts (overridable by regions) sets when rain falls: `itcz`, `summer`
+    (monsoon), `winter` (storm track) or `none`. It shifts rain chance and humidity through the year.
+  - The sky ("Conditions") is a deterministic hash of a 2° cell and the sol: a plausible sample, not a forecast.
+
+**Lighting.** `uSunDir` is the subsolar point in world space (the globe mesh never rotates, so world space is
+planet space). The shader darkens the night side with a soft twilight band (`daylight`). With the "Sun lighting"
+checkbox off, the animation loop points `uSunDir` from the upper left of the camera instead.
 
 **Zone ids in the texture are `index in the layer's zone array + 1`.** 0 means no zone, and the maximum is 255.
 - Reordering or inserting zones changes the ids, but the palette is rebuilt from the same arrays, so nothing else

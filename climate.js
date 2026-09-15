@@ -1,8 +1,10 @@
 // Zone classification and local climate. Pure functions, shared by the overlay texture and the
 // info panel so the map and the numbers always agree.
 import { PLANET, LATITUDE_ZONES, VERTICAL_ZONES, REGIONS } from './geography.js';
+import { dailyInsolation, dayLength, hemisphereSeason, localSolarHours, orbitAt, sunElevation } from './astro.js';
 
 const DEG = Math.PI / 180;
+const NO_RAIN_SEASON = { type: 'none', strength: 0 };
 
 export const LAYERS = {
   belts: { label: 'Climate belts', zones: LATITUDE_ZONES },
@@ -199,6 +201,7 @@ export function pointClimate(c) {
     wind: r.wind ?? z.wind,
     seasonality: r.seasonality ?? z.seasonality,
     driver: r.driver ?? z.driver,
+    rainSeason: r.rainSeason ?? z.rainSeason ?? NO_RAIN_SEASON,
     pressureHpa: pressureHpa(c.isWater ? 0 : c.altitude),
     floorPressureBar: c.isWater
       ? PLANET.SEA_LEVEL_HPA / 1000 + (PLANET.SEAWATER_DENSITY * PLANET.GRAVITY * c.depth) / 1e5
@@ -206,6 +209,144 @@ export function pointClimate(c) {
     treeline: lines.treeline,
     snowline: lines.snowline,
     notes: r.notes ?? [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Weather at a moment: the annual climate from pointClimate, spread over the year and the day.
+
+const SOLS = PLANET.SOLS_PER_YEAR;
+const wrap = (x, m) => ((x % m) + m) % m;
+const SEASON_LAG_SOLS = { land: 20, water: 45 }; // oceans respond to the sun more slowly than land
+const ITCZ_MEAN_LAT = -5;
+const ITCZ_SWING = 0.6; // degrees of ITCZ shift per degree of solar declination
+const ITCZ_LAG_SOLS = 30;
+const ITCZ_HALF_WIDTH = 12;
+const RAIN_PER_DAY_MM = 25; // estimates rain days from precipitation when the text gives none
+const CONVECTIVE_BELTS = new Set(['equatorial', 'trade-n', 'trade-s', 'dry-n', 'dry-s']);
+const CONVECTIVE_HOURS = [13, 19]; // local hours when afternoon storms rain
+const RH_PER_K = 0.06; // saturation vapour pressure grows ~6% per kelvin
+const DAY_PEAK_FRACTION = 0.7; // warmest at 70% of the daylight hours (~14:30 with 12 h of daylight)
+
+// Per sol of the year: seasonal temperature position `temp` in [−1, 1] and `wet` in [0, 1], plus the
+// annual mean wetness. Temperature is the daily insolation passed through a lagged first-order response
+// and scaled to its annual extremes, so eccentricity (a short, fierce southern summer) comes for free.
+const seasonCache = new Map();
+function seasonalCurves(lat, isWater, rainType) {
+  const latDeg = Math.round(lat);
+  const key = `${latDeg}|${isWater}|${rainType}`;
+  const cached = seasonCache.get(key);
+  if (cached) return cached;
+
+  const insolation = Array.from({ length: SOLS }, (_, i) => dailyInsolation(latDeg, i + 0.5));
+  const tau = isWater ? SEASON_LAG_SOLS.water : SEASON_LAG_SOLS.land;
+  const temp = new Float64Array(SOLS);
+  let t = insolation.reduce((a, b) => a + b, 0) / SOLS;
+  for (let loop = 0; loop < 3; loop++) {
+    for (let i = 0; i < SOLS; i++) temp[i] = t += (insolation[i] - t) / tau;
+  }
+  const lo = Math.min(...temp);
+  const span = Math.max(...temp) - lo;
+  for (let i = 0; i < SOLS; i++) temp[i] = span > 1e-6 ? ((temp[i] - lo) / span) * 2 - 1 : 0;
+
+  const wet = new Float64Array(SOLS);
+  for (let i = 0; i < SOLS; i++) {
+    if (rainType === 'summer') wet[i] = (1 + temp[i]) / 2;
+    else if (rainType === 'winter') wet[i] = (1 - temp[i]) / 2;
+    else if (rainType === 'itcz') {
+      const itcz = ITCZ_MEAN_LAT + ITCZ_SWING * orbitAt(i + 0.5 - ITCZ_LAG_SOLS).declination;
+      wet[i] = Math.exp(-(((latDeg - itcz) / ITCZ_HALF_WIDTH) ** 2));
+    } else wet[i] = 0.5;
+  }
+  const meanWet = wet.reduce((a, b) => a + b, 0) / SOLS;
+
+  const curves = { temp, wet, meanWet };
+  seasonCache.set(key, curves);
+  return curves;
+}
+
+// −1 at sunrise, rising to +1 at the warmest hour, then cooling until the next sunrise.
+function diurnalShape(hours, sunrise, length) {
+  if (length <= 0 || length >= 24) return 0;
+  const rise = DAY_PEAK_FRACTION * length;
+  const x = wrap(hours - sunrise, 24);
+  return x < rise ? -Math.cos((Math.PI * x) / rise) : Math.cos((Math.PI * (x - rise)) / (24 - rise));
+}
+
+// Deterministic value in [0, 1) for a set of integers.
+function hash01(...ints) {
+  let h = 2166136261;
+  for (const v of ints) {
+    h = Math.imul(h ^ v, 16777619);
+    h ^= h >>> 13;
+  }
+  h = Math.imul(h ^ (h >>> 16), 2246822507);
+  h ^= h >>> 13;
+  return (h >>> 0) / 4294967296;
+}
+
+// Possible weather at a classified point `c` with annual climate `w` (pointClimate) under `sun` (sunAt).
+// Temperatures and humidity follow the season and the hour; the sky is a plausible sample, the same
+// for the same place and sol.
+export function momentWeather(c, w, sun) {
+  const rain = w.rainSeason;
+  const curves = seasonalCurves(c.lat, c.isWater, rain.type);
+  const day = Math.floor(wrap(sun.sol + sun.mtcHours / 24, SOLS));
+  const wet = curves.wet[day];
+
+  const tempMean = (w.tempSummer + w.tempWinter) / 2 + (curves.temp[day] * (w.tempSummer - w.tempWinter)) / 2;
+  const localHours = localSolarHours(c.lon, sun);
+  const length = dayLength(c.lat, sun.declination);
+  const sunrise = 12 - length / 2;
+  const swing = (w.diurnal / 2) * Math.sin((Math.PI * length) / 24);
+  const tempNow = tempMean + swing * diurnalShape(localHours, sunrise, length);
+  // Absolute humidity stays put through the day, so relative humidity drops as the air warms.
+  const rhDay = w.rh[0] + (w.rh[1] - w.rh[0]) * wet;
+  const rh = Math.min(100, rhDay * Math.exp(-RH_PER_K * (tempNow - tempMean)));
+
+  const rainDays = w.rainDays ? mid(w.rainDays) : mid(w.precip) / RAIN_PER_DAY_MM;
+  const seasonFactor = curves.meanWet > 0 ? wet / curves.meanWet - 1 : 0;
+  const rainChance = Math.min(0.95, (rainDays / SOLS) * (1 + rain.strength * seasonFactor));
+
+  const elevation = sunElevation(c.lat, c.lon, sun);
+  const isDay = elevation > 0;
+  const cellLon = Math.floor(c.lon / 2);
+  const cellLat = Math.floor((c.lat + 90) / 2);
+  const roll = hash01(cellLon, cellLat, day);
+  const rainsToday = roll < rainChance;
+  const convective = CONVECTIVE_BELTS.has(c.latZone.id);
+  const rainingNow =
+    rainsToday && (!convective || (localHours >= CONVECTIVE_HOURS[0] && localHours < CONVECTIVE_HOURS[1]));
+  let conditions;
+  if (rainingNow) {
+    if (tempNow <= 0) conditions = 'Snow';
+    else conditions = convective && Math.abs(c.lat) < 45 && roll < rainChance * 0.4 ? 'Thunderstorm' : 'Rain';
+  } else {
+    const cloud = 0.6 * (rh / 100) + 0.4 * hash01(cellLon, cellLat, day, 1) + (rainsToday ? 0.3 : 0);
+    conditions = cloud > 0.8 ? 'Overcast' : cloud > 0.55 ? 'Partly cloudy' : 'Clear';
+    if (!isDay && conditions !== 'Overcast') conditions += ' night';
+  }
+
+  let season = hemisphereSeason(c.lat, sun.ls);
+  if (rain.strength > 0 && seasonFactor > 0.25) season += ', wet season';
+  if (rain.strength > 0 && seasonFactor < -0.25) season += ', dry season';
+
+  const polar = length <= 0 ? 'Polar night' : length >= 24 ? 'Midnight sun' : null;
+  return {
+    localHours,
+    sunElevation: elevation,
+    isDay,
+    dayLength: length,
+    polar,
+    sunrise: polar ? null : sunrise,
+    sunset: polar ? null : 12 + length / 2,
+    tempNow,
+    tempHigh: tempMean + swing,
+    tempLow: tempMean - swing,
+    rh,
+    rainChance,
+    conditions,
+    season,
   };
 }
 

@@ -16,9 +16,18 @@ export const PLANET = {
   MONTANE_BASE_M: 2500,
   TREELINE_EQ_M: 7000,
   SNOWLINE_EQ_M: 11000,
+  // Orbit (§1.2). Perihelion is at real Mars's Ls, so southern summer falls at perihelion (§2.4).
+  SEMI_MAJOR_AU: 1.02,
+  ECCENTRICITY: 0.093,
+  OBLIQUITY_DEG: 25.2,
+  SOLS_PER_YEAR: 366,
+  LS_PERIHELION_DEG: 250.87,
+  SOLAR_CONSTANT: 1361, // W/m² at 1 AU
 };
 
 // §1.5, §2.2, §2.4. Temperatures are sea-level annual means in °C, precipitation in mm/yr.
+// rainSeason: when the rain falls. type 'itcz' (wettest as the ITCZ passes overhead), 'summer'
+// (monsoon), 'winter' (storm track) or 'none'; strength 0–1 is how strongly rain chance swings with it.
 export const LATITUDE_ZONES = [
   {
     id: 'equatorial',
@@ -36,6 +45,7 @@ export const LATITUDE_ZONES = [
     pw: [130, 150],
     seasonality: 'Weak, double rainfall peak',
     driver: 'ITCZ crossing twice (mean ITCZ ~5°S)',
+    rainSeason: { type: 'itcz', strength: 0.5 },
     description:
       'Under the convergence zone the seasonal signal is wet/dry, not warm/cold. Forests are evergreen. ' +
       'Rain arrives in roughly a third as many events as on Earth, each two to three times heavier.',
@@ -57,6 +67,7 @@ export const LATITUDE_ZONES = [
     pw: [45, 120],
     seasonality: 'Mild',
     driver: 'Ocean buffer + aphelion summer',
+    rainSeason: { type: 'summer', strength: 0.4 },
     description:
       'Hadley cells reach 55–65° on this small, fast-turning planet, so steady trade easterlies cover two-thirds ' +
       'of the globe. In the north they blow over open ocean with 12,000 km of fetch.',
@@ -78,6 +89,7 @@ export const LATITUDE_ZONES = [
     pw: [45, 120],
     seasonality: 'Sharp, hot short summer',
     driver: 'Perihelion + land',
+    rainSeason: { type: 'summer', strength: 0.6 },
     description:
       'Southern summer currently falls at perihelion: a short, fierce summer and a long, cold winter. ' +
       'Deciduous leaf drop is forced by drought, not frost — the landscape goes brown to green, never green to gold.',
@@ -138,6 +150,7 @@ export const LATITUDE_ZONES = [
     pw: [50, 70],
     seasonality: 'Moderate (stormy / calm)',
     driver: 'Jet position',
+    rainSeason: { type: 'winter', strength: 0.3 },
     description:
       'One merged jet at ~60° and 35 km altitude, 40–90 m/s. Weather arrives as only three giant cyclones per ' +
       'hemisphere. The northern track is the cleanest on the planet, with no land to break the storms.',
@@ -158,6 +171,7 @@ export const LATITUDE_ZONES = [
     pw: [50, 70],
     seasonality: 'Moderate (stormy / calm)',
     driver: 'Jet position',
+    rainSeason: { type: 'winter', strength: 0.3 },
     description:
       'Westerlies and three giant cyclones strike the southern coasts, feeding dense, low temperate rainforest.',
   },
@@ -236,7 +250,7 @@ export const VERTICAL_ZONES = [
 //        {type:'circle', lon, lat, r} (r in degrees of arc), {type:'polygon', points:[[lon, lat], ...]},
 //        or an array of shapes (union).
 // where: {surface: 'land' | 'water', alt: [min, max]} with altitudes relative to sea level (null = open).
-// climate: overrides for the latitude belt values, plus tempOffset (K) and notes.
+// climate: overrides for the latitude belt values (including rainSeason), plus tempOffset (K) and notes.
 // vegetation / sea: palette keys colouring the region's land and water pixels on the map.
 // flora: what grows there, shown under "About this region".
 export const VEGETATION = {
@@ -461,6 +475,7 @@ const REGION_DATA = [
       pw: [8, 15],
       seasonality: 'Extreme wet/dry',
       driver: 'Cross-equatorial monsoon',
+      rainSeason: { type: 'summer', strength: 1 },
       notes: ['Breathable, temperate and dry: a pleasant Tibet'],
     },
     description:
@@ -643,6 +658,7 @@ const REGION_DATA = [
       diurnal: 13,
       seasonality: 'Strongest on the planet',
       driver: 'Monsoon and perihelion aligned',
+      rainSeason: { type: 'summer', strength: 1 },
       notes: ['Dust devils 5–10 km tall'],
     },
     description:

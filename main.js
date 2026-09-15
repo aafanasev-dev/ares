@@ -8,11 +8,13 @@ import {
   buildRegionColors,
   buildZoneIds,
   classify,
+  momentWeather,
   normalizeLon,
   pointClimate,
   zoneFor,
   zoneIndex,
 } from './climate.js';
+import { localSolarHours, marsNow, solFromLs, sunAt } from './astro.js';
 
 const MARS_RADIUS_M = 3389500;
 const HIST_BIN_M = 10;
@@ -45,6 +47,13 @@ const ui = {
   info: $('info'),
   infoBody: $('info-body'),
   infoClose: $('info-close'),
+  sunLight: $('sun-light'),
+  sol: $('sol'),
+  solValue: $('sol-value'),
+  hour: $('hour'),
+  hourValue: $('hour-value'),
+  subsolar: $('subsolar'),
+  timeNow: $('time-now'),
 };
 
 // ---------------------------------------------------------------------------
@@ -141,15 +150,18 @@ const fragmentShader = /* glsl */ `
     vec3 L = normalize(uSunDir);
     vec3 V = normalize(cameraPosition - vWorldPos);
 
-    float landDiffuse = max(dot(terrainN, L), 0.0);
-    vec3 land = landColor(elev) * (0.18 + 0.82 * landDiffuse);
+    // Day/night from the sphere normal, with a soft twilight band. Slopes facing the sun stay dark
+    // past the terminator, and the night side keeps a dim bluish ambient so the map stays readable.
+    float daylight = smoothstep(-0.06, 0.06, dot(up, L));
+    float landDiffuse = max(dot(terrainN, L), 0.0) * daylight;
+    vec3 land = landColor(elev) * (mix(vec3(0.08, 0.09, 0.13), vec3(0.18), daylight) + 0.82 * landDiffuse);
 
     float depth = uSeaLevel - elev;
     vec3 water = mix(vec3(0.31, 0.64, 0.85), vec3(0.04, 0.18, 0.35), sqrt(clamp(depth / 3000.0, 0.0, 1.0)));
     water = mix(water, vec3(0.62, 0.84, 0.95), 0.5 * (1.0 - smoothstep(0.0, 30.0, depth)));
-    float waterDiffuse = max(dot(normalize(mix(up, terrainN, 0.15)), L), 0.0);
-    float spec = pow(max(dot(up, normalize(L + V)), 0.0), 60.0) * 0.35;
-    water = water * (0.25 + 0.75 * waterDiffuse) + vec3(spec);
+    float waterDiffuse = max(dot(normalize(mix(up, terrainN, 0.15)), L), 0.0) * daylight;
+    float spec = pow(max(dot(up, normalize(L + V)), 0.0), 60.0) * 0.35 * daylight;
+    water = water * (mix(vec3(0.10, 0.11, 0.16), vec3(0.25), daylight) + 0.75 * waterDiffuse) + vec3(spec);
 
     // Anti-aliased coastline.
     float fw = max(fwidth(depth), 1.0);
@@ -194,7 +206,7 @@ const fragmentShader = /* glsl */ `
 
     // Thin dusty atmosphere at the limb.
     float rim = pow(1.0 - max(dot(up, V), 0.0), 3.0);
-    color += vec3(0.8, 0.45, 0.3) * rim * 0.25;
+    color += vec3(0.8, 0.45, 0.3) * rim * 0.25 * (0.3 + 0.7 * daylight);
 
     gl_FragColor = vec4(color, 1.0);
   }
@@ -414,6 +426,11 @@ function fmtRange([a, b], unit = '', digits = 0) {
 const fmtLat = (lat) => `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}`;
 const fmtLon = (lon) => `${normalizeLon(lon).toFixed(1)}°E`;
 const fmtKm = (m) => `${fmt(m / 1000, 1)} km`;
+// Mars hours (24 per sol) as hh:mm.
+const fmtTime = (hours) => {
+  const minutes = Math.floor((((hours % 24) + 24) % 24) * 60);
+  return `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+};
 
 const esc = (s) =>
   String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
@@ -422,7 +439,14 @@ function chip(zone) {
   return zone ? `<span class="chip"><i style="background:${zone.color}"></i>${esc(zone.name)}</span>` : '';
 }
 
-function infoHtml(object, c, w) {
+function weatherList(rows) {
+  return `<dl class="weather">${rows
+    .filter(Boolean)
+    .map(([k, v, note]) => `<dt>${esc(k)}</dt><dd>${esc(v)}${note ? `<small>${esc(note)}</small>` : ''}</dd>`)
+    .join('')}</dl>`;
+}
+
+function infoHtml(object, c, w, now) {
   const title = object?.name ?? c.region?.name ?? (c.isWater ? 'Open ocean' : 'Land');
   const kicker = object ? OBJECT_GROUPS[object.group] : c.isWater ? 'Sea' : 'Land';
   const surface = c.isWater ? `${formatMeters(c.depth)} deep` : `${formatMeters(c.altitude)} above sea level`;
@@ -441,6 +465,23 @@ function infoHtml(object, c, w) {
     c.isWater
       ? ['Pressure at the bottom', `${fmt(w.floorPressureBar)} bar`]
       : ['Treeline / snowline', `${fmtKm(w.treeline)} / ${fmtKm(w.snowline)}`, 'At this latitude'],
+  ];
+  const nowRows = [
+    [
+      'Local time',
+      `${fmtTime(now.localHours)} · ${now.isDay ? 'day' : 'night'}`,
+      `Sun ${fmt(Math.abs(now.sunElevation))}° ${now.sunElevation >= 0 ? 'above' : 'below'} the horizon`,
+    ],
+    [
+      'Sunrise / sunset',
+      now.polar ?? `${fmtTime(now.sunrise)} / ${fmtTime(now.sunset)}`,
+      `${fmt(now.dayLength, 1)} h of daylight`,
+    ],
+    ['Conditions', now.conditions, 'A possible sky for this sol, not a forecast'],
+    ['Temperature', `${fmt(now.tempNow)} °C`, `Today ${fmtRange([now.tempLow, now.tempHigh], ' °C')}`],
+    ['Humidity', `${fmt(now.rh)}% RH`],
+    ['Chance of rain', `${fmt(now.rainChance * 100)}% today`],
+    ['Season', now.season],
   ];
   const notes = [...w.notes];
   if (!c.isWater && w.tempMean[1] < 0) notes.unshift('Annual mean below freezing');
@@ -465,13 +506,10 @@ function infoHtml(object, c, w) {
            <p>${esc(object.description)}</p>`
         : ''
     }
-    <h3>Weather</h3>
-    <dl class="weather">
-      ${rows
-        .filter(Boolean)
-        .map(([k, v, note]) => `<dt>${esc(k)}</dt><dd>${esc(v)}${note ? `<small>${esc(note)}</small>` : ''}</dd>`)
-        .join('')}
-    </dl>
+    <h3>Right now</h3>
+    ${weatherList(nowRows)}
+    <h3>Climate (annual)</h3>
+    ${weatherList(rows)}
     ${notes.length ? `<ul class="notes">${notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
     ${sections.join('')}
   `;
@@ -551,6 +589,7 @@ async function main() {
   let seaLevel = 0;
   let layer = ui.layer.value;
   let selection = null; // {lon, lat, object}
+  let sun = sunAt(0, 0); // set from the time sliders
   let legendHighlight = 0; // zone index picked in the legend, 0 = none
 
   // --- Zone overlay -------------------------------------------------------
@@ -666,7 +705,8 @@ async function main() {
     if (!selection) return;
     const { lon, lat, object } = selection;
     const c = classify(lon, lat, elevationAt(data, lon, lat), seaLevel);
-    ui.infoBody.innerHTML = infoHtml(object, c, pointClimate(c));
+    const w = pointClimate(c);
+    ui.infoBody.innerHTML = infoHtml(object, c, w, momentWeather(c, w, sun));
   }
 
   function select(next) {
@@ -718,6 +758,33 @@ async function main() {
   ui.rotate.addEventListener('change', () => {
     controls.autoRotate = ui.rotate.checked;
   });
+  // --- Sun and season -----------------------------------------------------
+  // The hour slider holds minutes of Mars Coordinated Time (time at 0°E).
+  function updateSun() {
+    const sol = Number(ui.sol.value);
+    const mtcHours = Number(ui.hour.value) / 60;
+    sun = sunAt(sol, mtcHours);
+    ui.solValue.textContent = `Sol ${sol + 1} · Ls ${fmt(sun.ls)}° · ${sun.seasonName}`;
+    ui.hourValue.textContent = `${fmtTime(mtcHours)} MTC`;
+    ui.subsolar.textContent =
+      `Subsolar point ${fmtLat(sun.declination)} ${fmtLon(sun.subsolarLon)} · ${fmt(sun.distanceAu, 3)} AU`;
+    if (ui.sunLight.checked) sunDir.copy(lonLatToVector(sun.subsolarLon, sun.declination));
+    renderInfo();
+  }
+
+  function setTimeToNow() {
+    const { ls, mtcHours } = marsNow();
+    ui.sol.value = Math.floor(solFromLs(ls));
+    ui.hour.value = Math.floor(mtcHours * 60);
+    updateSun();
+  }
+
+  ui.sol.addEventListener('input', updateSun);
+  ui.hour.addEventListener('input', updateSun);
+  ui.sunLight.addEventListener('change', updateSun);
+  ui.timeNow.addEventListener('click', setTimeToNow);
+  setTimeToNow();
+
   ui.level.disabled = false;
   ui.levelNum.disabled = false;
   setLevel(Number(ui.level.value));
@@ -769,7 +836,8 @@ async function main() {
     const c = classify(point.lon, point.lat, elevationAt(data, point.lon, point.lat), seaLevel);
     const surface = c.isWater ? `${formatMeters(c.depth)} deep` : `${formatMeters(c.altitude)} above sea`;
     const zone = c.region?.name ?? c.latZone.name;
-    ui.hover.textContent = `${fmtLat(c.lat)} ${fmtLon(c.lon)} · ${surface} · ${zone}`;
+    const local = fmtTime(localSolarHours(c.lon, sun));
+    ui.hover.textContent = `${fmtLat(c.lat)} ${fmtLon(c.lon)} · ${surface} · ${zone} · ${local} local`;
     ui.hover.hidden = false;
   }
 
@@ -780,8 +848,9 @@ async function main() {
     const distance = camera.position.length();
     controls.rotateSpeed = THREE.MathUtils.clamp((distance - 1) * 0.4, 0.05, 1);
     controls.update();
-    // Light comes from the upper left of the viewer, so the visible side is always lit.
-    sunDir.copy(cameraSunOffset).applyQuaternion(camera.quaternion);
+    // With sun lighting on, sunDir follows the time sliders (updateSun). Otherwise light comes from the
+    // upper left of the viewer, so the visible side is always lit.
+    if (!ui.sunLight.checked) sunDir.copy(cameraSunOffset).applyQuaternion(camera.quaternion);
     updateHover();
     updateMarkerVisibility();
     renderer.render(scene, camera);

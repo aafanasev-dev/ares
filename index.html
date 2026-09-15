@@ -62,6 +62,7 @@
 
     <label class="check"><input type="checkbox" id="landmarks" checked> Landmarks</label>
     <label class="check"><input type="checkbox" id="rotate"> Auto-rotate</label>
+    <label class="check"><input type="checkbox" id="sun-light" checked> Sun lighting (day and night)</label>
 
     <p class="hint">Click the globe or a landmark to see its weather.</p>
     <p class="credit">Elevation: MGS MOLA MEGDR (NASA / GSFC). Climate: planet_geography.md.</p>
@@ -72,7 +73,20 @@
     <div id="info-body"></div>
   </aside>
 
-  <div id="hover" hidden></div>
+  <div id="bottom">
+    <div id="hover" hidden></div>
+    <aside id="time-panel">
+      <div class="time-head">
+        <h2>Sun &amp; season</h2>
+        <button type="button" id="time-now">Now</button>
+      </div>
+      <label for="sol">Day of year <output id="sol-value">–</output></label>
+      <input type="range" id="sol" min="0" max="365" step="1" value="0">
+      <label for="hour">Time at 0°E <output id="hour-value">–</output></label>
+      <input type="range" id="hour" min="0" max="1439" step="1" value="720">
+      <p id="subsolar" class="time-note"></p>
+    </aside>
+  </div>
 
   <script type="module" src="main.js"></script>
 </body>

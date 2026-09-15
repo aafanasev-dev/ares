@@ -7,6 +7,10 @@ The globe shows the climate belts, regional climates and altitude zones from tha
 landmarks from its gazetteer. Click anywhere to see the local weather: temperature adjusted for altitude,
 precipitation, humidity, wind, air pressure and seasons.
 
+The "Sun & season" panel sets the day of the year and the time of day. On load both sliders are set to where real
+Mars is right now. The globe is lit by the sun for that moment, so the night side is dark. The info panel also shows
+a possible current weather: local time, sunrise and sunset, temperature, humidity, chance of rain and sky.
+
 Elevation data: MGS MOLA MEGDR global topography (NASA PDS), meters relative to the Mars areoid.
 
 ## Run
