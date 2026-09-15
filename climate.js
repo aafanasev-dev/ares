@@ -246,6 +246,97 @@ export function buildBeltGradient(rows = 1024) {
   return out;
 }
 
+// Half-width of the blend between neighbouring regions.
+export const REGION_BLEND_DEG = 1.5;
+
+// Box blur with running sums: longitude wraps, latitude clamps at the poles. `tmp` is scratch space.
+function boxBlur(src, tmp, width, height, r) {
+  const norm = 1 / (2 * r + 1);
+  for (let y = 0; y < height; y++) {
+    const row = y * width;
+    let sum = 0;
+    for (let k = -r; k <= r; k++) sum += src[row + ((k % width) + width) % width];
+    for (let x = 0; x < width; x++) {
+      tmp[row + x] = sum * norm;
+      sum += src[row + ((x + r + 1) % width)] - src[row + ((x - r + width) % width)];
+    }
+  }
+  for (let x = 0; x < width; x++) {
+    let sum = 0;
+    for (let k = -r; k <= r; k++) sum += tmp[Math.max(0, k) * width + x];
+    for (let y = 0; y < height; y++) {
+      src[y * width + x] = sum * norm;
+      sum += tmp[Math.min(height - 1, y + r + 1) * width + x] - tmp[Math.max(0, y - r) * width + x];
+    }
+  }
+}
+
+// Smooth region colours for the overlay, from a regions-layer id grid made by buildZoneIds. Returns two
+// premultiplied RGBA grids, `land` and `water`. Each surface class is blurred on its own and normalised
+// by its mask, so colours blend between regions (and fade into areas without a region) but never across
+// the coastline. Each grid also reaches a little past the coast, which keeps linear filtering clean.
+export function buildRegionColors(
+  { ids, width: idWidth, height: idHeight },
+  { elev, width: srcWidth, height: srcHeight },
+  seaLevel,
+  step = 2,
+  scale = 2,
+) {
+  // The blend is several texels wide, so the colours are built at 1/scale of the id grid's resolution.
+  const width = Math.floor(idWidth / scale);
+  const height = Math.floor(idHeight / scale);
+  const n = width * height;
+  const land = REGIONS.map((r) => hexToRgb(r.landColor ?? r.seaColor));
+  const water = REGIONS.map((r) => hexToRgb(r.seaColor));
+  // Per class: red, green, blue (colour × coverage), coverage, mask.
+  const classes = [0, 1].map(() => Array.from({ length: 5 }, () => new Float32Array(n)));
+  const idHalf = scale >> 1;
+  const srcHalf = step >> 1;
+
+  for (let y = 0; y < height; y++) {
+    // Sample the same elevation pixel buildZoneIds used for this id, so land/water always agrees with it.
+    const idY = Math.min(idHeight - 1, y * scale + idHalf);
+    const srcRow = Math.min(srcHeight - 1, idY * step + srcHalf) * srcWidth;
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      const idX = Math.min(idWidth - 1, x * scale + idHalf);
+      const isWater = elev[srcRow + Math.min(srcWidth - 1, idX * step + srcHalf)] < seaLevel;
+      const ch = classes[isWater ? 1 : 0];
+      ch[4][i] = 1;
+      const id = ids[idY * idWidth + idX];
+      if (!id) continue;
+      const rgb = (isWater ? water : land)[id - 1];
+      ch[0][i] = rgb[0];
+      ch[1][i] = rgb[1];
+      ch[2][i] = rgb[2];
+      ch[3][i] = 1;
+    }
+  }
+
+  // Three box passes approximate a Gaussian whose half-width is ~1.5 × (2r + 1) texels.
+  const radius = Math.max(1, Math.round(((REGION_BLEND_DEG * width) / 360 / 1.5 - 1) / 2));
+  const tmp = new Float32Array(n);
+  for (const ch of classes) {
+    for (const channel of ch) {
+      for (let pass = 0; pass < 3; pass++) boxBlur(channel, tmp, width, height, radius);
+    }
+  }
+
+  const [landOut, waterOut] = classes.map(([r, g, b, a, m]) => {
+    const out = new Uint8Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      if (m[i] < 1e-4) continue;
+      const inv = 1 / m[i];
+      out[i * 4] = Math.min(255, Math.round(r[i] * inv));
+      out[i * 4 + 1] = Math.min(255, Math.round(g[i] * inv));
+      out[i * 4 + 2] = Math.min(255, Math.round(b[i] * inv));
+      out[i * 4 + 3] = Math.min(255, Math.round(a[i] * inv * 255));
+    }
+    return out;
+  });
+  return { land: landOut, water: waterOut, width, height };
+}
+
 // Zone index per texel for an overlay layer, sampled every `step` source pixels.
 // Row 0 is 90°N and column 0 is 0°E, like the elevation grid.
 export function buildZoneIds({ elev, width, height }, seaLevel, layer, step = 2) {

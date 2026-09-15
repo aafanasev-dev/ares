@@ -61,6 +61,9 @@ Rules for `REGIONS`:
   from rough shapes.
 - `climate` overrides the belt values. If a region sets `precip` without `rainDays`, the belt's rain days are
   hidden so the two don't contradict each other.
+- Map colour comes from `vegetation` (a `VEGETATION` key, for land pixels) and `sea` (a `SEA` key, for water
+  pixels, default `open`). The exported `REGIONS` add `landColor`, `seaColor` and `color` (legend/chips); an unknown
+  key throws at load. What grows there goes in `flora` (shown under "About this region"), not in `precipNote`.
 
 **`climate.js` is the single source of truth for what zone a point is in.** Two consumers use it, so they always agree:
 - `buildZoneIds()`: the overlay texture, sampled every 2nd elevation pixel. The regions layer takes about 130 ms
@@ -74,12 +77,16 @@ temperature (`vegetationLines`).
 **Zone ids in the texture are `index in the layer's zone array + 1`.** 0 means no zone, and the maximum is 255.
 - Reordering or inserting zones changes the ids, but the palette is rebuilt from the same arrays, so nothing else
   needs updating.
-- The fragment shader reads `uZoneId` (R8, nearest filtering) and looks up `uPalette` (256×1).
-- The belts layer takes its colour from `buildBeltGradient()` instead: a 1×1024 latitude texture where each border
-  blends over 10% of both belts' spans. It doesn't brighten or dim on selection, since that would reintroduce a hard
-  step; ids are still used to find its borders.
-- Other layers get thin outlines where neighbouring ids differ. The selected zone (`uSelectedId`) gets a dashed white
-  outline on every layer.
+- `uColorMode` picks the colour source (`COLOR_MODES` in `main.js`):
+  - 0, altitude: `uPalette` (256×1) looked up by id, with thin outlines where neighbouring ids differ.
+  - 1, belts: `buildBeltGradient()`, a 1×1024 latitude texture where each border blends over 10% of both belts' spans.
+  - 2, regions (the default layer): `buildRegionColors()`, two premultiplied RGBA grids for land and water. Each is
+    blurred only within its own surface class (masked, normalised box blur, `REGION_BLEND_DEG`), and the shader picks
+    between them with the elevation coastline mask, so regions blend into each other but never across the coast.
+    Built in `rebuildOverlay` together with the ids, at half the zone-texture resolution (`REGION_COLOR_SCALE`),
+    ~300 ms total.
+- Selection never changes colours. The selected zone (`uSelectedId`, found through the id texture) only gets a dashed
+  white outline, on every layer.
 
 **Coordinate conventions in `main.js`.**
 - Shader texture coordinates are `s = east lon / 360` and `t = 0` at 90°N (`vTex = (uv.x, 1 − uv.y)`).

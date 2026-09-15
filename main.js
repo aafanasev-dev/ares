@@ -5,6 +5,7 @@ import { OBJECTS, OBJECT_GROUPS } from './geography.js';
 import {
   LAYERS,
   buildBeltGradient,
+  buildRegionColors,
   buildZoneIds,
   classify,
   normalizeLon,
@@ -17,6 +18,8 @@ const MARS_RADIUS_M = 3389500;
 const HIST_BIN_M = 10;
 const ZONE_STEP = 2; // zone texture resolution = elevation grid / ZONE_STEP
 const BELT_GRADIENT_ROWS = 1024;
+const COLOR_MODES = { altitude: 0, belts: 1, regions: 2 }; // uColorMode per layer
+const REGION_COLOR_SCALE = 2; // region colour grids at 1/2 of the zone texture resolution
 const MINOR_LABEL_DISTANCE = 2.3; // camera distance below which rank-2 labels are shown
 const CLICK_SLOP_PX = 5;
 
@@ -86,7 +89,9 @@ const fragmentShader = /* glsl */ `
   uniform float uOverlayOpacity;
   uniform float uSelectedId;
   uniform sampler2D uBeltGradient;
-  uniform float uBeltMode;
+  uniform float uColorMode;
+  uniform sampler2D uRegionLand;
+  uniform sampler2D uRegionWater;
 
   varying vec2 vTex;
   varying vec3 vWorldPos;
@@ -159,17 +164,23 @@ const fragmentShader = /* glsl */ `
     float edge = step(0.5,
       abs(zoneAt(vTex + vec2(px.x, 0.0)) - id) + abs(zoneAt(vTex - vec2(px.x, 0.0)) - id) +
       abs(zoneAt(vTex + vec2(0.0, px.y)) - id) + abs(zoneAt(vTex - vec2(0.0, px.y)) - id));
+    // Colour source per layer (uColorMode): 0 = palette per id, 1 = belt gradient, 2 = smooth region
+    // colours. Regions come as premultiplied land and water grids picked by the coastline mask, so they
+    // blend between regions but stay sharp at the coast. Selection never changes colours.
+    float beltMode = 1.0 - step(0.5, abs(uColorMode - 1.0));
+    float regionMode = step(1.5, uColorMode);
     vec3 paletteColor = texture2D(uPalette, vec2((id + 0.5) / 256.0, 0.5)).rgb;
-    vec3 zoneColor = mix(paletteColor, texture2D(uBeltGradient, vec2(0.5, vTex.y)).rgb, uBeltMode);
-    float hasZone = step(0.5, id) * step(0.001, uOverlayOpacity);
+    vec3 zoneColor = mix(paletteColor, texture2D(uBeltGradient, vec2(0.5, vTex.y)).rgb, beltMode);
+    vec4 region = mix(texture2D(uRegionLand, vTex), texture2D(uRegionWater, vTex), wet);
+    float visible = step(0.001, uOverlayOpacity);
+    float hasZone = step(0.5, id) * visible;
     float selected = step(0.5, uSelectedId) * (1.0 - step(0.5, abs(id - uSelectedId)));
-    // Brightening the selected zone would put a hard step back into the belt gradient, so belts
-    // mark the selection with the dashed outline only.
-    float emphasis = step(0.5, uSelectedId) * (1.0 - uBeltMode);
     float shade = 0.3 + 0.7 * mix(landDiffuse, waterDiffuse, wet);
-    float alpha = clamp(uOverlayOpacity * (1.0 + emphasis * (0.6 * selected - 0.3 * (1.0 - selected))), 0.0, 0.92);
-    color = mix(color, zoneColor * shade, alpha * hasZone);
-    float outline = edge * hasZone * (1.0 - selected) * (1.0 - uBeltMode);
+    float alpha = min(uOverlayOpacity, 0.92);
+    vec3 flatColor = mix(color, zoneColor * shade, alpha * hasZone);
+    vec3 smoothColor = color * (1.0 - region.a * alpha) + region.rgb * shade * alpha;
+    color = mix(flatColor, smoothColor, regionMode * visible);
+    float outline = edge * hasZone * (1.0 - selected) * (1.0 - beltMode) * (1.0 - regionMode);
     color = mix(color, zoneColor * 0.3, outline * clamp(0.35 + uOverlayOpacity, 0.0, 0.95));
 
     // Dashed white outline around the selected zone: a checkerboard in map space (longitude scaled by
@@ -334,7 +345,21 @@ function createZoneTextures(data) {
   gradient.wrapT = THREE.ClampToEdgeWrapping;
   gradient.needsUpdate = true;
 
-  return { ids, palette, gradient, texel: new THREE.Vector2(1 / w, 1 / h) };
+  // Smooth region colours (premultiplied RGBA), one grid per surface class; filled by rebuildOverlay.
+  const rw = Math.floor(w / REGION_COLOR_SCALE);
+  const rh = Math.floor(h / REGION_COLOR_SCALE);
+  const [regionLand, regionWater] = [0, 1].map(() => {
+    const tex = new THREE.DataTexture(new Uint8Array(rw * rh * 4), rw, rh, THREE.RGBAFormat, THREE.UnsignedByteType);
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.needsUpdate = true;
+    return tex;
+  });
+
+  return { ids, palette, gradient, regionLand, regionWater, texel: new THREE.Vector2(1 / w, 1 / h) };
 }
 
 // ---------------------------------------------------------------------------
@@ -423,7 +448,8 @@ function infoHtml(object, c, w) {
   const sections = [];
   if (c.region) {
     const heading = c.region.name === title ? 'About this region' : c.region.name;
-    sections.push(`<h3>${esc(heading)}</h3><p>${esc(c.region.description)}</p>`);
+    const flora = c.region.flora ? `<p><strong>Vegetation:</strong> ${esc(c.region.flora)}</p>` : '';
+    sections.push(`<h3>${esc(heading)}</h3><p>${esc(c.region.description)}</p>${flora}`);
   }
   sections.push(`<h3>Climate belt: ${esc(c.latZone.name)}</h3><p>${esc(c.latZone.description)}</p>`);
   if (c.vertZone) sections.push(`<h3>Altitude zone: ${esc(c.vertZone.name)}</h3><p>${esc(c.vertZone.description)}</p>`);
@@ -514,7 +540,9 @@ async function main() {
       uOverlayOpacity: { value: 0 },
       uSelectedId: { value: 0 },
       uBeltGradient: { value: zoneTextures.gradient },
-      uBeltMode: { value: 0 },
+      uColorMode: { value: 0 },
+      uRegionLand: { value: zoneTextures.regionLand },
+      uRegionWater: { value: zoneTextures.regionWater },
     },
   });
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(1, 512, 256), material));
@@ -529,9 +557,16 @@ async function main() {
   let overlayTimer = 0;
   function rebuildOverlay() {
     clearTimeout(overlayTimer);
-    const { ids } = buildZoneIds(data, seaLevel, layer, ZONE_STEP);
-    zoneTextures.ids.image.data.set(ids);
+    const zones = buildZoneIds(data, seaLevel, layer, ZONE_STEP);
+    zoneTextures.ids.image.data.set(zones.ids);
     zoneTextures.ids.needsUpdate = true;
+    if (layer === 'regions') {
+      const { land, water } = buildRegionColors(zones, data, seaLevel, ZONE_STEP, REGION_COLOR_SCALE);
+      zoneTextures.regionLand.image.data.set(land);
+      zoneTextures.regionWater.image.data.set(water);
+      zoneTextures.regionLand.needsUpdate = true;
+      zoneTextures.regionWater.needsUpdate = true;
+    }
   }
   function scheduleOverlay() {
     clearTimeout(overlayTimer);
@@ -541,7 +576,7 @@ async function main() {
   function applyLayer() {
     layer = ui.layer.value;
     legendHighlight = 0;
-    material.uniforms.uBeltMode.value = layer === 'belts' ? 1 : 0;
+    material.uniforms.uColorMode.value = COLOR_MODES[layer] ?? 0;
     const zones = LAYERS[layer]?.zones ?? [];
     const pal = zoneTextures.palette.image.data;
     pal.fill(0);

@@ -237,11 +237,40 @@ export const VERTICAL_ZONES = [
 //        or an array of shapes (union).
 // where: {surface: 'land' | 'water', alt: [min, max]} with altitudes relative to sea level (null = open).
 // climate: overrides for the latitude belt values, plus tempOffset (K) and notes.
-export const REGIONS = [
+// vegetation / sea: palette keys colouring the region's land and water pixels on the map.
+// flora: what grows there, shown under "About this region".
+export const VEGETATION = {
+  rainforest: '#1b5e32',
+  forest: '#2e7d3e',
+  'open-forest': '#5b9a45',
+  savanna: '#a3c95c',
+  steppe: '#c8b878',
+  desert: '#e0a95e',
+  dunes: '#d98c45',
+  alpine: '#b9b2a6',
+  salt: '#e8e2d0',
+  ice: '#f3f7fb',
+};
+
+export const SEA = {
+  open: '#3a86b8',
+  sheltered: '#2aa7b5',
+  anoxic: '#274f8c',
+  shallow: '#6cc4c9',
+  saline: '#4fa7c4',
+  storm: '#3b62a3',
+  ice: '#cfe7f2',
+};
+
+const REGION_DATA = [
   {
     id: 'vm-side-chasmata',
     name: 'Sheltered side chasmata',
-    color: '#0a8f6a',
+    vegetation: 'rainforest',
+    sea: 'sheltered',
+    flora:
+      'The tallest forest on the planet: 300 m canopy with heavy epiphyte loading and a very dark floor. ' +
+      'Gliding vertebrates are the dominant arboreal body plan.',
     shape: [
       { type: 'circle', lon: 283.6, lat: -9.8, r: 2.6 },
       { type: 'circle', lon: 288.5, lat: -6.5, r: 2.2 },
@@ -253,7 +282,7 @@ export const REGIONS = [
       wind: 'Dead calm, permanently misted',
       precipNote: 'Fog-fed; continuous orographic rain on the walls of the sound',
       rh: [90, 100],
-      notes: ['Anoxic below a few hundred metres of water', 'Tallest forest on the planet: 300 m canopy'],
+      notes: ['Anoxic below a few hundred metres of water'],
     },
     description:
       'Melas, Candor, Ophir and Hebes Chasmata: sheltered, dead-calm, permanently misted and warm. The only places ' +
@@ -263,7 +292,11 @@ export const REGIONS = [
   {
     id: 'vm-sound',
     name: 'Valles Marineris sound',
-    color: '#2ab6c9',
+    vegetation: 'rainforest',
+    sea: 'sheltered',
+    flora:
+      'Rain-fed forest on the inner walls: giants where shelter is genuine, wind-pruned scrub on spurs exposed ' +
+      'to the axial trade flow.',
     shape: {
       type: 'polygon',
       points: [
@@ -291,7 +324,8 @@ export const REGIONS = [
   {
     id: 'tharsis-cones',
     name: 'Tharsis volcanic cones',
-    color: '#f2f0ea',
+    vegetation: 'alpine',
+    flora: 'Alpine desert above the treeline, then bare permanent ice above ~11 km.',
     shape: [
       { type: 'circle', lon: 255.5, lat: 11.8, r: 4.5 },
       { type: 'circle', lon: 247, lat: 0.8, r: 4 },
@@ -300,7 +334,7 @@ export const REGIONS = [
     where: { surface: 'land', alt: [7000, null] },
     climate: {
       precip: [0, 300],
-      precipNote: 'Alpine desert; snow and ice above ~11 km',
+      precipNote: 'Falls as snow above ~11 km',
       rh: [10, 20],
       notes: ['Each cone throws a windward rain crescent and a tapering lee wake'],
     },
@@ -312,7 +346,8 @@ export const REGIONS = [
   {
     id: 'gap-jets',
     name: 'Inter-cone gap-jet corridors',
-    color: '#e2b35c',
+    vegetation: 'dunes',
+    flora: 'Barren: permanently scoured by the gap jets.',
     shape: [
       { type: 'circle', lon: 251.3, lat: 6.3, r: 2.6 },
       { type: 'circle', lon: 243.5, lat: -3.8, r: 2.6 },
@@ -321,7 +356,6 @@ export const REGIONS = [
     climate: {
       wind: 'Permanently accelerated gap jets',
       precip: [0, 100],
-      precipNote: 'Permanently scoured desert',
       rh: [10, 20],
       pw: [8, 15],
       notes: ['Star dunes up to 500 m high with 15 km spacing'],
@@ -333,13 +367,16 @@ export const REGIONS = [
   {
     id: 'olympus',
     name: 'Olympus Mons island',
-    color: '#c9693b',
+    vegetation: 'open-forest',
+    flora:
+      'Moderate 40–90 m forest on the lower flanks rather than rainforest, with glaciers from the summit ice cap ' +
+      'descending into it.',
     shape: { type: 'circle', lon: 226.2, lat: 18.65, r: 7 },
     where: { surface: 'land' },
     climate: {
       precipNote: 'Not especially wet: air arrives dried from the Tharsis lee',
       notes: [
-        'Permanent tropical ice cap above 11 km, glaciers descending into warm forest',
+        'Permanent tropical ice cap above 11 km',
         'Downwind: a cloud-free wake ~2,000 km long with a von Kármán vortex street',
         'One of only two nesting sites in the northern ocean',
       ],
@@ -351,12 +388,13 @@ export const REGIONS = [
   {
     id: 'elysium',
     name: 'Elysium Mons island',
-    color: '#2e8f3b',
+    vegetation: 'rainforest',
+    flora: 'Forest from sea level to 6 km with a 100–200 m canopy: species-poor, with giant endemics.',
     shape: { type: 'circle', lon: 147.2, lat: 25, r: 11 },
     where: { surface: 'land' },
     climate: {
       precipNote: 'Very wet eastern flank in clean oceanic trade flow',
-      notes: ['Forest from sea level to 6 km, 100–200 m canopy', 'Marginal ice cap near the summit'],
+      notes: ['Marginal ice cap near the summit'],
     },
     description:
       'The second island volcano (+12.1 km), 6,000 km east of Olympus. With Olympus it is one of the only two land ' +
@@ -365,7 +403,8 @@ export const REGIONS = [
   {
     id: 'lunae-coast',
     name: 'Eastern coastal rainforest',
-    color: '#177a3b',
+    vegetation: 'rainforest',
+    flora: 'Lowland rainforest on the windward coast.',
     shape: {
       type: 'polygon',
       points: [
@@ -375,7 +414,7 @@ export const REGIONS = [
     where: { surface: 'land', alt: [null, 800] },
     climate: {
       precip: [2300, 2700],
-      precipNote: 'Lowland rainforest on the windward coast',
+      precipNote: 'Trade winds forced up the escarpment',
       rh: [80, 90],
     },
     description:
@@ -385,7 +424,10 @@ export const REGIONS = [
   {
     id: 'east-escarpment',
     name: 'East Tharsis escarpment',
-    color: '#45a86e',
+    vegetation: 'rainforest',
+    flora:
+      'Cloud forest in stacked vertical bands, 60–250 m: giants in sheltered gorges, wind-pruned scrub on the ' +
+      'interfluves.',
     shape: {
       type: 'polygon',
       points: [
@@ -395,9 +437,8 @@ export const REGIONS = [
     where: { surface: 'land', alt: [null, 5500] },
     climate: {
       precip: [3000, 4000],
-      precipNote: 'Cloud forest in stacked vertical bands',
+      precipNote: 'Orographic rain and cloud on the windward wall',
       rh: [85, 95],
-      notes: ['Giants to 250 m in sheltered gorges, wind-pruned scrub on the interfluves'],
     },
     description:
       'The eastern wall of Tharsis, from +0.5 to +5 km: cloud forest, 3,000–4,000 mm a year, in seven vertical km ' +
@@ -406,7 +447,8 @@ export const REGIONS = [
   {
     id: 'tharsis-plateau',
     name: 'Tharsis plateau steppe',
-    color: '#cdab79',
+    vegetation: 'steppe',
+    flora: 'Cold dry steppe. Gallery forest (20–60 m) grows only along the glacier-fed rivers.',
     shape: {
       type: 'polygon',
       points: [[234, 25], [262, 25], [272, 5], [285, -12], [292, -30], [290, -42], [262, -44], [246, -34], [238, -10]],
@@ -419,7 +461,7 @@ export const REGIONS = [
       pw: [8, 15],
       seasonality: 'Extreme wet/dry',
       driver: 'Cross-equatorial monsoon',
-      notes: ['Gallery forest (20–60 m) only along glacier-fed rivers', 'Breathable, temperate and dry: a pleasant Tibet'],
+      notes: ['Breathable, temperate and dry: a pleasant Tibet'],
     },
     description:
       'Syria and Solis Planum, +3 to +6 km: cold dry steppe at 0.78–0.83 bar and ~11 °C at the equator. The planet’s ' +
@@ -429,7 +471,8 @@ export const REGIONS = [
   {
     id: 'daedalia-lee',
     name: 'Daedalia rain shadow',
-    color: '#b8874a',
+    vegetation: 'desert',
+    flora: 'Arid rain-shadow scrub and desert.',
     shape: {
       type: 'polygon',
       points: [[214, 25], [240, 25], [238, -10], [246, -34], [262, -44], [262, -52], [214, -52]],
@@ -447,12 +490,12 @@ export const REGIONS = [
   {
     id: 'alba-forest',
     name: 'Alba Mons river forest',
-    color: '#58a42f',
+    vegetation: 'forest',
+    flora: 'The largest single forest by area: a uniform 60–100 m canopy with no giants, exposed to the wind.',
     shape: { type: 'circle', lon: 250.4, lat: 40.5, r: 12 },
     where: { surface: 'land' },
     climate: {
       precipNote: 'Maritime exposure facing the northern ocean',
-      notes: ['Largest single forest by area: uniform 60–100 m canopy, no giants'],
     },
     description:
       'A vast, extremely low-angle shield on the northern edge of Tharsis. Gentle slopes and maritime exposure give ' +
@@ -461,7 +504,7 @@ export const REGIONS = [
   {
     id: 'hellas-gulf',
     name: 'Hellas gulf',
-    color: '#2a57a0',
+    sea: 'anoxic',
     shape: [
       { type: 'circle', lon: 70.5, lat: -42.4, r: 20 },
       { type: 'circle', lon: 92, lat: -33, r: 4 },
@@ -480,12 +523,13 @@ export const REGIONS = [
   {
     id: 'hellas-shores',
     name: 'Hellas arid shores',
-    color: '#dca544',
+    vegetation: 'desert',
+    flora: 'Arid shores with sabkha belts left by decadal surge flooding.',
     shape: { type: 'circle', lon: 70.5, lat: -42.4, r: 27 },
     where: { surface: 'land', alt: [null, 2000] },
     climate: {
       precipNote: 'Arid, with coastal fog from the gulf',
-      notes: ['Subsiding air runs 10–15 K warmer than the surrounding highlands', 'Sabkha belts from decadal surge flooding'],
+      notes: ['Subsiding air runs 10–15 K warmer than the surrounding highlands'],
     },
     description:
       'The shores of Hellas sit squarely in the 45–60° subsidence belt. Descending air warms as it sinks into the ' +
@@ -494,7 +538,7 @@ export const REGIONS = [
   {
     id: 'argyre-gulf',
     name: 'Argyre gulf and Uzboi–Ladon inlet',
-    color: '#3f63ad',
+    sea: 'anoxic',
     shape: { type: 'circle', lon: 316, lat: -49.7, r: 9 },
     where: { surface: 'water' },
     climate: {
@@ -507,13 +551,14 @@ export const REGIONS = [
   {
     id: 'hesperia-sabkha',
     name: 'Hesperia Planum sabkha',
-    color: '#d7d0b5',
+    vegetation: 'salt',
+    sea: 'shallow',
+    flora: 'Nothing grows: a permanent damp salt crust at ~25 °C and 60% humidity.',
     shape: { type: 'circle', lon: 110, lat: -20, r: 9 },
     where: { alt: [-500, 400] },
     climate: {
       precipNote: '25 m storm surges reach hundreds of km inland',
       rh: [55, 65],
-      notes: ['Permanent salt crust: damp, ~25 °C, supporting nothing'],
     },
     description:
       'One of the two flattest surfaces on the planet, within a metre or two of sea level. Surge salt cannot be ' +
@@ -522,12 +567,14 @@ export const REGIONS = [
   {
     id: 'arabia-shallows',
     name: 'Arabia shallows',
-    color: '#cbbf92',
+    vegetation: 'salt',
+    sea: 'shallow',
+    flora: 'Low islands are permanent sabkha: salt cannot be leached out, so little grows.',
     shape: { type: 'circle', lon: 15, lat: 20, r: 22 },
     where: { alt: [-2500, 400] },
     climate: {
       precipNote: '25 m storm surges reach hundreds of km inland',
-      notes: ['Shallow sea and archipelago', 'Low islands are permanent sabkha'],
+      notes: ['Shallow sea and archipelago'],
     },
     description:
       'A shallow sea with an archipelago, one of the two flattest surfaces on the planet. Surge floods far inland ' +
@@ -536,7 +583,8 @@ export const REGIONS = [
   {
     id: 'planum-australe',
     name: 'Planum Australe ice cap',
-    color: '#e9f1f8',
+    vegetation: 'ice',
+    flora: 'Permanent ice; krummholz (1–4 m) only at the margin, to ~73°S.',
     shape: { type: 'box', lon: [0, 360], lat: [-90, -72] },
     where: { surface: 'land' },
     climate: {
@@ -544,7 +592,6 @@ export const REGIONS = [
       notes: [
         'Maritime, wet-based ice: fast outlet glaciers calving icebergs',
         'Braided sandur plains and jökulhlaups at the margins',
-        'Krummholz (1–4 m) at the margin to ~73°S',
       ],
     },
     description:
@@ -554,12 +601,11 @@ export const REGIONS = [
   {
     id: 'storm-coast-s',
     name: 'Southern storm coast',
-    color: '#2f7361',
+    vegetation: 'forest',
+    flora: 'Temperate rainforest, dense and low (20–40 m); windy except in the fjord heads.',
     shape: { type: 'box', lon: [0, 360], lat: [-72, -60] },
     where: { surface: 'land' },
-    climate: {
-      notes: ['Temperate rainforest, dense and low (20–40 m); windy except in fjord heads'],
-    },
+    climate: {},
     description:
       'Aonia Terra and the southern uplands under the westerlies: three giant cyclones per hemisphere drive dense, ' +
       'low temperate rainforest.',
@@ -567,14 +613,15 @@ export const REGIONS = [
   {
     id: 'subsidence-desert-s',
     name: 'Southern subsidence desert',
-    color: '#e6b27b',
+    vegetation: 'desert',
+    flora: 'Cool desert with succulents adapted to floods, not drizzle.',
     shape: { type: 'box', lon: [0, 360], lat: [-60, -45] },
     where: { surface: 'land' },
     climate: {
       precip: [200, 400],
       precipNote: 'In 3–4 cloudbursts a year',
       rainDays: [3, 4],
-      notes: ['Crater basins become salt pans, soda lakes and brine pools', 'Succulents adapted to floods, not drizzle'],
+      notes: ['Crater basins become salt pans, soda lakes and brine pools'],
     },
     description:
       'A cool desert (8–14 °C) under the subsidence belt. Beaded crater chains that end in closed basins become the ' +
@@ -583,7 +630,10 @@ export const REGIONS = [
   {
     id: 'southern-savanna',
     name: 'Southern savanna and crater forests',
-    color: '#a9ba4a',
+    vegetation: 'savanna',
+    flora:
+      'Grasses 5–8 m tall with flat-crowned, heavily buttressed trees 40–80 m apart. Crater ring forests: a 150 m ' +
+      'canopy in every bowl, knee-high scrub on every rim, gallery forest along the spillway gorges.',
     shape: { type: 'box', lon: [0, 360], lat: [-45, -12] },
     where: { surface: 'land' },
     climate: {
@@ -593,11 +643,7 @@ export const REGIONS = [
       diurnal: 13,
       seasonality: 'Strongest on the planet',
       driver: 'Monsoon and perihelion aligned',
-      notes: [
-        'Grasses 5–8 m, flat-crowned trees 40–80 m',
-        'Crater ring forests: 150 m canopy in every bowl, knee-high scrub on every rim',
-        'Dust devils 5–10 km tall',
-      ],
+      notes: ['Dust devils 5–10 km tall'],
     },
     description:
       'Terra Cimmeria and Terra Sirenum: heavily cratered plains where water fills one crater, overflows, and fills ' +
@@ -607,7 +653,7 @@ export const REGIONS = [
   {
     id: 'amazonis-lee',
     name: 'Amazonis lee sea',
-    color: '#72b6ca',
+    sea: 'saline',
     shape: { type: 'polygon', points: [[180, 0], [236, 0], [242, 45], [180, 45]] },
     where: { surface: 'water' },
     climate: {
@@ -621,7 +667,7 @@ export const REGIONS = [
   {
     id: 'north-sea-ice',
     name: 'Northern sea-ice ocean',
-    color: '#d3edf8',
+    sea: 'ice',
     shape: { type: 'box', lon: [0, 360], lat: [72, 90] },
     where: { surface: 'water' },
     climate: {
@@ -632,7 +678,7 @@ export const REGIONS = [
   {
     id: 'north-storm-track',
     name: 'Northern storm track',
-    color: '#5e80ba',
+    sea: 'storm',
     shape: { type: 'box', lon: [0, 360], lat: [60, 72] },
     where: { surface: 'water' },
     climate: {
@@ -644,7 +690,7 @@ export const REGIONS = [
   {
     id: 'north-subsidence-sea',
     name: 'Northern subsidence sea',
-    color: '#8ecbd9',
+    sea: 'saline',
     shape: { type: 'box', lon: [0, 360], lat: [45, 60] },
     where: { surface: 'water' },
     climate: {
@@ -658,7 +704,7 @@ export const REGIONS = [
   {
     id: 'north-trade-ocean',
     name: 'Northern trade-wind ocean',
-    color: '#4b9dc6',
+    sea: 'open',
     shape: { type: 'box', lon: [0, 360], lat: [12, 45] },
     where: { surface: 'water' },
     climate: {
@@ -668,6 +714,17 @@ export const REGIONS = [
       'Utopia, Acidalia, Amazonis and Chryse: deep ocean under steady easterlies, broken only by Olympus and Elysium.',
   },
 ];
+
+function paletteColor(palette, key, region) {
+  if (!(key in palette)) throw new Error(`Region ${region.id}: unknown palette key "${key}"`);
+  return palette[key];
+}
+
+export const REGIONS = REGION_DATA.map((region) => {
+  const landColor = region.vegetation ? paletteColor(VEGETATION, region.vegetation, region) : null;
+  const seaColor = paletteColor(SEA, region.sea ?? 'open', region);
+  return { ...region, landColor, seaColor, color: landColor ?? seaColor };
+});
 
 // §1.4 gazetteer, with the matching landmark text from §3–§4. rank 1 labels are always shown,
 // rank 2 labels only when zoomed in.

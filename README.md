@@ -54,8 +54,10 @@ three.js from the jsdelivr CDN, so the browser needs internet access.
 - **Sea level**: slider or number field, in meters above the Mars datum. It starts at the planet's +2,000 m.
   Coastlines, zones, landmarks and weather all follow it.
 - **Relief exaggeration**: vertical exaggeration of the terrain (0× gives a smooth sphere).
-- **Zones**: climate belts (by latitude), regional climates (Tharsis plateau, Valles Marineris, Hellas, ...),
-  or altitude zones (lowland, montane, alpine, nival). Click a legend entry to highlight that zone.
+- **Zones**: regional climates (the default; Tharsis plateau, Valles Marineris, Hellas, ...), climate belts
+  (by latitude) or altitude zones (lowland, montane, alpine, nival). Regions are coloured by vegetation (forest
+  greens, light-green savanna, sandy desert, blue seas) and blend smoothly into each other, but not across the
+  coastline. Click a legend entry to outline that zone with a dashed line.
 - **Landmarks**: gazetteer objects. Smaller ones get labels when you zoom in.
 - Click the globe or a landmark to open the info panel. Esc closes it.
 
