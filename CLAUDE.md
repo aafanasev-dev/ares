@@ -7,6 +7,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 An interactive 3D globe of an imaginary ocean planet ("Ares") built on real Mars MOLA topography. The world is
 described in `planet_geography.md`: Mars at 1.02 AU, a 1 bar atmosphere, and sea level at +2,000 m above the Mars
 datum. The globe draws the climate zones and landmarks from that description, and clicking a place shows its weather.
+
+`biomes.md` splits those climates into **biomes**: areas of land or water with similar climate, vegetation and fauna.
+A regional climate can hold several biomes (coast vs interior, altitude bands); sea biomes are set by temperature,
+humidity and wind (which sets the waves). Each biome lists its place, climate with precipitation, vegetation and
+fauna, daily changes and seasons. It is worldbuilding text built on `planet_geography.md` and the `REGIONS` in
+`geography.js`; the code does not use it yet. When a region, zone or climate number changes, update `biomes.md` too.
 A time panel (day of year and time of day, set to real Mars "now" on load) lights the globe with the real sun, so
 the night side is in shadow, and the info panel shows a possible current weather for that moment.
 
@@ -100,6 +106,20 @@ temperature (`vegetationLines`).
 **Lighting.** `uSunDir` is the subsolar point in world space (the globe mesh never rotates, so world space is
 planet space). The shader darkens the night side with a soft twilight band (`daylight`). With the "Sun lighting"
 checkbox off, the animation loop points `uSunDir` from the upper left of the camera instead.
+
+**Ice and snow** (`climate.js`, drawn over every layer; "Ice and snow" checkbox → `uIceOn`).
+- Temperatures come from `surfaceTempProfile`: belt summer/winter values interpolated between belt centres
+  (extrapolated past ±81°, so the poles are colder), moved through the year by `seasonalCurves`.
+- Sea ice: `seaIceCover(lat, sol)` runs a per-latitude thickness model (grow below −1.8 °C, melt above, `ICE_*`
+  constants in `PLANET`) plus equatorward drift. Tuned so the north keeps a perennial core to ~84°N with winter ice to
+  ~70°N, and southern sea ice retreats to the cap bays in summer. Recheck with a Node table if the constants change.
+- Land: `isGlacier(c)` (nival zone or a region with `vegetation: 'ice'`) is permanent; `snowCover(c, sol)` is
+  seasonal, from the seasonal temperature at the point's altitude.
+- Shader inputs: `uPolar` (`buildPolarProfile`: sea-ice cover and seasonal land temperature by latitude, rebuilt when
+  the integer sol changes) and `uIceMask` (`buildIceMask`, rebuilt with the overlay).
+- The shader adds only visual noise: a wavy ice edge and ±1 K on the snow line. Icebergs are 3D Worley noise
+  (`icebergs()`) whose size and count grow with cover, so they are small near open water and merge into the pack.
+  The info panel uses the noise-free values, so it can differ from the drawn edge by about a degree.
 
 **Zone ids in the texture are `index in the layer's zone array + 1`.** 0 means no zone, and the maximum is 255.
 - Reordering or inserting zones changes the ids, but the palette is rebuilt from the same arrays, so nothing else

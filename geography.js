@@ -23,6 +23,18 @@ export const PLANET = {
   SOLS_PER_YEAR: 366,
   LS_PERIHELION_DEG: 250.87,
   SOLAR_CONSTANT: 1361, // W/m² at 1 AU
+  // Sea ice (§2.3, §3.11): sea-level freezing only poleward of ~73°, a perennial northern core and seasonal ice
+  // reaching ~70°N. Thickness grows and melts per sol with the degrees below or above freezing.
+  ICE_FREEZE_C: -1.8,
+  // Tuned: northern perennial core to ~84°N, winter edge ~70°N; southern ice retreats to the cap bays in summer.
+  ICE_GROWTH_M_PER_K_SOL: 0.02,
+  ICE_MELT_M_PER_K_SOL: 0.03,
+  ICE_MAX_M: 8,
+  ICE_FULL_M: 1, // thickness at which the sea is fully ice-covered
+  ICE_DRIFT_DEG: 5, // ice drifts this far equatorward of where it forms
+  // Seasonal snow on land: full cover at or below SNOW_FULL_C, none above SNOW_NONE_C (seasonal mean temperature).
+  SNOW_FULL_C: -3,
+  SNOW_NONE_C: 1,
 };
 
 // §1.5, §2.2, §2.4. Temperatures are sea-level annual means in °C, precipitation in mm/yr.
@@ -273,7 +285,8 @@ export const SEA = {
   shallow: '#6cc4c9',
   saline: '#4fa7c4',
   storm: '#3b62a3',
-  ice: '#cfe7f2',
+  // Cold polar water. Sea ice itself is drawn by season (ice and snow layer), not by the region colour.
+  polar: '#5f8db3',
 };
 
 const REGION_DATA = [
@@ -683,7 +696,7 @@ const REGION_DATA = [
   {
     id: 'north-sea-ice',
     name: 'Northern sea-ice ocean',
-    sea: 'ice',
+    sea: 'polar',
     shape: { type: 'box', lon: [0, 360], lat: [72, 90] },
     where: { surface: 'water' },
     climate: {

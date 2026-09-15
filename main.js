@@ -1,13 +1,17 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { OBJECTS, OBJECT_GROUPS } from './geography.js';
+import { OBJECTS, OBJECT_GROUPS, PLANET } from './geography.js';
 import {
   LAYERS,
+  POLAR_TEMP_RANGE,
   buildBeltGradient,
+  buildIceMask,
+  buildPolarProfile,
   buildRegionColors,
   buildZoneIds,
   classify,
+  dayOfYear,
   momentWeather,
   normalizeLon,
   pointClimate,
@@ -20,6 +24,8 @@ const MARS_RADIUS_M = 3389500;
 const HIST_BIN_M = 10;
 const ZONE_STEP = 2; // zone texture resolution = elevation grid / ZONE_STEP
 const BELT_GRADIENT_ROWS = 1024;
+const POLAR_ROWS = 512; // latitude rows of the sea-ice / land-temperature profile
+const BERG_CELL_M = 40000; // size of the large iceberg cells
 const COLOR_MODES = { altitude: 0, belts: 1, regions: 2 }; // uColorMode per layer
 const REGION_COLOR_SCALE = 2; // region colour grids at 1/2 of the zone texture resolution
 const MINOR_LABEL_DISTANCE = 2.3; // camera distance below which rank-2 labels are shown
@@ -48,6 +54,7 @@ const ui = {
   infoBody: $('info-body'),
   infoClose: $('info-close'),
   sunLight: $('sun-light'),
+  iceSnow: $('ice-snow'),
   sol: $('sol'),
   solValue: $('sol-value'),
   hour: $('hour'),
@@ -101,6 +108,13 @@ const fragmentShader = /* glsl */ `
   uniform float uColorMode;
   uniform sampler2D uRegionLand;
   uniform sampler2D uRegionWater;
+  uniform sampler2D uPolar;
+  uniform sampler2D uIceMask;
+  uniform float uIceOn;
+  uniform float uSnowFull;
+  uniform float uSnowNone;
+  uniform float uLapse;
+  uniform vec2 uPolarTempRange;
 
   varying vec2 vTex;
   varying vec3 vWorldPos;
@@ -108,6 +122,7 @@ const fragmentShader = /* glsl */ `
 
   const float PI = 3.141592653589793;
   const float MARS_RADIUS = ${MARS_RADIUS_M.toFixed(1)};
+  const float BERG_SCALE = ${(MARS_RADIUS_M / BERG_CELL_M).toFixed(3)}; // iceberg cells per planet radius
 
   vec3 landColor(float e) {
     vec3 c = vec3(0.22, 0.09, 0.05);
@@ -122,6 +137,70 @@ const fragmentShader = /* glsl */ `
 
   float zoneAt(vec2 t) {
     return floor(texture2D(uZoneId, t).r * 255.0 + 0.5);
+  }
+
+  // Hashes and noise on 3D positions, so patterns on the sphere don't stretch near the poles.
+  float hash13(vec3 p) {
+    p = fract(p * 0.1031);
+    p += dot(p, p.zyx + 31.32);
+    return fract((p.x + p.y) * p.z);
+  }
+
+  vec3 hash33(vec3 p) {
+    p = fract(p * vec3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yxz + 33.33);
+    return fract((p.xxy + p.yxx) * p.zyx);
+  }
+
+  float valueNoise(vec3 p) {
+    vec3 i = floor(p);
+    vec3 f = fract(p);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(
+      mix(mix(hash13(i), hash13(i + vec3(1.0, 0.0, 0.0)), f.x),
+          mix(hash13(i + vec3(0.0, 1.0, 0.0)), hash13(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),
+      mix(mix(hash13(i + vec3(0.0, 0.0, 1.0)), hash13(i + vec3(1.0, 0.0, 1.0)), f.x),
+          mix(hash13(i + vec3(0.0, 1.0, 1.0)), hash13(i + vec3(1.0, 1.0, 1.0)), f.x), f.y),
+      f.z);
+  }
+
+  // One octave of icebergs in 3D cells of 1/scale planet radii. Sea-ice cover (0–1) sets both how many cells hold
+  // a berg and how big it is, so bergs are small and rare near open water and merge toward the pack. pxCell is the
+  // pixel footprint in cell units. Returns (berg, underwater rim, berg core).
+  vec3 icebergs(vec3 p, float scale, float cover, float sizeScale, float pxCell) {
+    vec3 q = p * scale;
+    vec3 cell = floor(q);
+    float presence = smoothstep(0.0, 0.5, cover);
+    float radius = mix(0.1, 0.62, cover) * sizeScale;
+    float aa = max(pxCell, 1e-4);
+    // Jagged outlines: one noise field per pixel stretches or shrinks the distance to every berg.
+    float jag = 1.0 + (valueNoise(q * 1.7) + 0.5 * valueNoise(q * 4.3) - 0.75) * 0.8;
+    vec3 result = vec3(0.0);
+    for (int x = -1; x <= 1; x++) {
+      for (int y = -1; y <= 1; y++) {
+        for (int z = -1; z <= 1; z++) {
+          vec3 c = cell + vec3(float(x), float(y), float(z));
+          if (hash13(c + 17.13) > presence) continue;
+          float r = radius * mix(0.6, 1.2, hash13(c + 3.71));
+          // Angular floes: cube cross-sections blended with a round shape. Each cube is turned about two axes by
+          // random angles, so the slices through the sphere don't line up into a grid anywhere (including the poles).
+          vec3 o = q - (c + 0.2 + 0.6 * hash33(c));
+          float a = hash13(c + 9.2) * 6.2832;
+          float b = hash13(c + 5.9) * 6.2832;
+          o = vec3(o.x * cos(a) + o.z * sin(a), o.y, o.z * cos(a) - o.x * sin(a));
+          o = vec3(o.x, o.y * cos(b) - o.z * sin(b), o.y * sin(b) + o.z * cos(b));
+          float d = mix(length(o), max(max(abs(o.x), abs(o.y)), abs(o.z)) * 1.2, 0.4) * jag;
+          result = max(result, vec3(
+            1.0 - smoothstep(r - aa, r + aa, d),
+            1.0 - smoothstep(r * 1.35 - aa, r * 1.35 + aa, d),
+            1.0 - smoothstep(r * 0.3, r + aa, d)));
+        }
+      }
+    }
+    // Below ~3 px per cell the pattern would sparkle, so it fades to its average coverage.
+    float detail = 1.0 - smoothstep(0.15, 0.4, pxCell);
+    float average = presence * radius * radius * 1.6;
+    return mix(vec3(average, average * 1.6, average * 0.5), result, detail);
   }
 
   void main() {
@@ -194,6 +273,43 @@ const fragmentShader = /* glsl */ `
     color = mix(flatColor, smoothColor, regionMode * visible);
     float outline = edge * hasZone * (1.0 - selected) * (1.0 - beltMode) * (1.0 - regionMode);
     color = mix(color, zoneColor * 0.3, outline * clamp(0.35 + uOverlayOpacity, 0.0, 0.95));
+
+    // Ice and snow, drawn over every layer. uPolar holds sea-ice cover (r) and the seasonal sea-level land
+    // temperature (g) by latitude; uIceMask marks permanent land ice. Noise only roughens the edges.
+    vec3 fwUp = fwidth(up);
+    if (uIceOn > 0.5) {
+      vec3 iceAmbient = mix(vec3(0.07, 0.08, 0.12), vec3(0.18), daylight);
+      vec3 iceTop = vec3(0.87, 0.92, 0.97);
+
+      // Sea ice: pack where cover is full, icebergs over grey-blue slush in the transition to open water.
+      float wobble = (valueNoise(up * 6.0) - 0.5) * (3.0 / 180.0) + (valueNoise(up * 23.0) - 0.5) * (0.6 / 180.0);
+      float cover = texture2D(uPolar, vec2(0.5, clamp(vTex.y + wobble, 0.0, 1.0))).r * wet;
+      if (cover > 0.003) {
+        // Ice stays bright under a low polar sun, so its light falls off more gently than plain Lambert.
+        float iceShade = sqrt(max(dot(up, L), 0.0)) * daylight;
+        vec3 iceLit = iceTop * (iceAmbient + 0.82 * iceShade);
+        float pxUnit = length(fwUp);
+        vec3 big = icebergs(up, BERG_SCALE, cover, 1.0, pxUnit * BERG_SCALE);
+        vec3 small = icebergs(up + 7.3, BERG_SCALE * 4.0, cover, 0.7, pxUnit * BERG_SCALE * 4.0);
+        float berg = max(big.x, small.x);
+        float rim = max(big.y, small.y);
+        float core = max(big.z, small.z);
+        vec3 seaIce = mix(color, vec3(0.55, 0.66, 0.74) * (iceAmbient + 0.7 * iceShade), cover * cover * 0.6);
+        seaIce = mix(seaIce, vec3(0.32, 0.64, 0.70) * (iceAmbient + 0.7 * iceShade), max(rim - berg, 0.0) * 0.25);
+        seaIce = mix(seaIce, iceLit * mix(0.9, 1.0, core), berg);
+        vec3 pack = iceLit * (0.95 + 0.05 * valueNoise(up * 150.0));
+        color = mix(color, mix(seaIce, pack, smoothstep(0.85, 0.98, cover)), wet);
+      }
+
+      // Land: glaciers from the mask, seasonal snow where the seasonal temperature at this altitude is cold.
+      float glacier = texture2D(uIceMask, vTex).r;
+      float seaLevelTemp = mix(uPolarTempRange.x, uPolarTempRange.y, texture2D(uPolar, vec2(0.5, vTex.y)).g);
+      float landTemp = seaLevelTemp - uLapse * (elev - uSeaLevel) / 1000.0 + (valueNoise(up * 40.0) - 0.5) * 2.0;
+      float snow = 1.0 - smoothstep(uSnowFull, uSnowNone, landTemp);
+      float landIce = max(glacier, snow) * (1.0 - wet);
+      vec3 snowColor = mix(vec3(0.93, 0.95, 0.98), vec3(0.82, 0.89, 0.96), glacier);
+      color = mix(color, snowColor * (iceAmbient + 0.84 * sqrt(landDiffuse)), landIce * 0.95);
+    }
 
     // Dashed white outline around the selected zone: a checkerboard in map space (longitude scaled by
     // cos(lat) so dashes keep their length near the poles). Cells are ~6 px, snapped to a power of two
@@ -371,7 +487,37 @@ function createZoneTextures(data) {
     return tex;
   });
 
-  return { ids, palette, gradient, regionLand, regionWater, texel: new THREE.Vector2(1 / w, 1 / h) };
+  // Ice and snow: a latitude profile rebuilt when the sol changes, and a glacier mask rebuilt with the overlay.
+  // Linear filtering keeps both edges soft.
+  const polar = new THREE.DataTexture(
+    new Uint8Array(POLAR_ROWS * 4),
+    1,
+    POLAR_ROWS,
+    THREE.RGBAFormat,
+    THREE.UnsignedByteType,
+  );
+  const iceMask = new THREE.DataTexture(new Uint8Array(w * h), w, h, THREE.RedFormat, THREE.UnsignedByteType);
+  for (const tex of [polar, iceMask]) {
+    tex.magFilter = THREE.LinearFilter;
+    tex.minFilter = THREE.LinearFilter;
+    tex.generateMipmaps = false;
+    tex.unpackAlignment = 1;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.needsUpdate = true;
+  }
+  polar.wrapS = THREE.ClampToEdgeWrapping;
+  iceMask.wrapS = THREE.RepeatWrapping;
+
+  return {
+    ids,
+    palette,
+    gradient,
+    regionLand,
+    regionWater,
+    polar,
+    iceMask,
+    texel: new THREE.Vector2(1 / w, 1 / h),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -439,6 +585,14 @@ function chip(zone) {
   return zone ? `<span class="chip"><i style="background:${zone.color}"></i>${esc(zone.name)}</span>` : '';
 }
 
+function seaIceLabel(cover) {
+  const pct = `${fmt(cover * 100)}%`;
+  if (cover < 0.05) return 'Open water';
+  if (cover < 0.5) return `Scattered floes and icebergs (${pct})`;
+  if (cover < 0.9) return `Broken pack ice (${pct})`;
+  return `Pack ice (${pct})`;
+}
+
 function weatherList(rows) {
   return `<dl class="weather">${rows
     .filter(Boolean)
@@ -481,6 +635,10 @@ function infoHtml(object, c, w, now) {
     ['Temperature', `${fmt(now.tempNow)} °C`, `Today ${fmtRange([now.tempLow, now.tempHigh], ' °C')}`],
     ['Humidity', `${fmt(now.rh)}% RH`],
     ['Chance of rain', `${fmt(now.rainChance * 100)}% today`],
+    c.isWater
+      ? ['Sea ice', seaIceLabel(now.seaIce)]
+      : (now.glacier || now.snow >= 0.05) &&
+        ['Snow and ice', now.glacier ? 'Glacier ice' : `Snow cover ${fmt(now.snow * 100)}%`],
     ['Season', now.season],
   ];
   const notes = [...w.notes];
@@ -581,6 +739,13 @@ async function main() {
       uColorMode: { value: 0 },
       uRegionLand: { value: zoneTextures.regionLand },
       uRegionWater: { value: zoneTextures.regionWater },
+      uPolar: { value: zoneTextures.polar },
+      uIceMask: { value: zoneTextures.iceMask },
+      uIceOn: { value: ui.iceSnow.checked ? 1 : 0 },
+      uSnowFull: { value: PLANET.SNOW_FULL_C },
+      uSnowNone: { value: PLANET.SNOW_NONE_C },
+      uLapse: { value: PLANET.LAPSE_K_PER_KM },
+      uPolarTempRange: { value: new THREE.Vector2(...POLAR_TEMP_RANGE) },
     },
   });
   scene.add(new THREE.Mesh(new THREE.SphereGeometry(1, 512, 256), material));
@@ -590,6 +755,7 @@ async function main() {
   let layer = ui.layer.value;
   let selection = null; // {lon, lat, object}
   let sun = sunAt(0, 0); // set from the time sliders
+  let polarDay = -1; // sol of the year the polar profile texture was built for
   let legendHighlight = 0; // zone index picked in the legend, 0 = none
 
   // --- Zone overlay -------------------------------------------------------
@@ -599,6 +765,8 @@ async function main() {
     const zones = buildZoneIds(data, seaLevel, layer, ZONE_STEP);
     zoneTextures.ids.image.data.set(zones.ids);
     zoneTextures.ids.needsUpdate = true;
+    zoneTextures.iceMask.image.data.set(buildIceMask(data, seaLevel, ZONE_STEP).mask);
+    zoneTextures.iceMask.needsUpdate = true;
     if (layer === 'regions') {
       const { land, water } = buildRegionColors(zones, data, seaLevel, ZONE_STEP, REGION_COLOR_SCALE);
       zoneTextures.regionLand.image.data.set(land);
@@ -764,6 +932,11 @@ async function main() {
     const sol = Number(ui.sol.value);
     const mtcHours = Number(ui.hour.value) / 60;
     sun = sunAt(sol, mtcHours);
+    if (dayOfYear(sun) !== polarDay) {
+      polarDay = dayOfYear(sun);
+      zoneTextures.polar.image.data.set(buildPolarProfile(polarDay, POLAR_ROWS));
+      zoneTextures.polar.needsUpdate = true;
+    }
     ui.solValue.textContent = `Sol ${sol + 1} · Ls ${fmt(sun.ls)}° · ${sun.seasonName}`;
     ui.hourValue.textContent = `${fmtTime(mtcHours)} MTC`;
     ui.subsolar.textContent =
@@ -782,6 +955,9 @@ async function main() {
   ui.sol.addEventListener('input', updateSun);
   ui.hour.addEventListener('input', updateSun);
   ui.sunLight.addEventListener('change', updateSun);
+  ui.iceSnow.addEventListener('change', () => {
+    material.uniforms.uIceOn.value = ui.iceSnow.checked ? 1 : 0;
+  });
   ui.timeNow.addEventListener('click', setTimeToNow);
   setTimeToNow();
 

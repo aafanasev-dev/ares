@@ -217,6 +217,8 @@ export function pointClimate(c) {
 
 const SOLS = PLANET.SOLS_PER_YEAR;
 const wrap = (x, m) => ((x % m) + m) % m;
+// Integer sol of the year for a sun from sunAt.
+export const dayOfYear = (sun) => Math.floor(wrap(sun.sol + sun.mtcHours / 24, SOLS));
 const SEASON_LAG_SOLS = { land: 20, water: 45 }; // oceans respond to the sun more slowly than land
 const ITCZ_MEAN_LAT = -5;
 const ITCZ_SWING = 0.6; // degrees of ITCZ shift per degree of solar declination
@@ -291,7 +293,7 @@ function hash01(...ints) {
 export function momentWeather(c, w, sun) {
   const rain = w.rainSeason;
   const curves = seasonalCurves(c.lat, c.isWater, rain.type);
-  const day = Math.floor(wrap(sun.sol + sun.mtcHours / 24, SOLS));
+  const day = dayOfYear(sun);
   const wet = curves.wet[day];
 
   const tempMean = (w.tempSummer + w.tempWinter) / 2 + (curves.temp[day] * (w.tempSummer - w.tempWinter)) / 2;
@@ -347,7 +349,139 @@ export function momentWeather(c, w, sun) {
     rainChance,
     conditions,
     season,
+    seaIce: c.isWater ? seaIceCover(c.lat, day) : 0,
+    snow: snowCover(c, day),
+    glacier: isGlacier(c),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Ice and snow. Temperatures come from a latitude profile interpolated between belt centres (the belt table jumps
+// at its borders, which would put ice edges exactly on 60° or 72°), moved through the year by seasonalCurves.
+// The map draws the same model in the shader (uPolar, uIceMask), adding only visual edge noise.
+
+const BELT_PROFILE = LATITUDE_ZONES.map((z) => ({
+  lat: (z.lat[0] + z.lat[1]) / 2,
+  mid: (z.tempSummer + z.tempWinter) / 2,
+  amp: (z.tempSummer - z.tempWinter) / 2,
+})).sort((a, b) => a.lat - b.lat);
+
+// Sea-level seasonal mid temperature and half-range at a latitude. Poleward of the polar belt centres the last
+// slope is extrapolated, so the poles are colder than the belt average.
+export function surfaceTempProfile(lat) {
+  let i = BELT_PROFILE.findIndex((b) => b.lat >= lat);
+  if (i === -1) i = BELT_PROFILE.length - 1;
+  if (i === 0) i = 1;
+  const a = BELT_PROFILE[i - 1];
+  const b = BELT_PROFILE[i];
+  const t = (lat - a.lat) / (b.lat - a.lat);
+  return { mid: a.mid + (b.mid - a.mid) * t, amp: a.amp + (b.amp - a.amp) * t };
+}
+
+// Seasonal mean sea-level temperature on a sol of the year, with the land or ocean lag.
+export function seasonalSurfaceTemp(lat, sol, isWater) {
+  const { mid, amp } = surfaceTempProfile(lat);
+  return mid + amp * seasonalCurves(lat, isWater, 'none').temp[Math.floor(wrap(sol, SOLS))];
+}
+
+const ICE_MIN_LAT = 50;
+const iceCache = new Map();
+// Sea-ice thickness per sol at an integer latitude: grows below freezing, melts above, run 4 years to settle.
+function seaIceThickness(latDeg) {
+  const cached = iceCache.get(latDeg);
+  if (cached) return cached;
+  const temps = Array.from({ length: SOLS }, (_, i) => seasonalSurfaceTemp(latDeg, i, true));
+  const thickness = new Float64Array(SOLS);
+  let h = 0;
+  for (let year = 0; year < 4; year++) {
+    for (let i = 0; i < SOLS; i++) {
+      const below = PLANET.ICE_FREEZE_C - temps[i];
+      h += below * (below > 0 ? PLANET.ICE_GROWTH_M_PER_K_SOL : PLANET.ICE_MELT_M_PER_K_SOL);
+      h = Math.min(PLANET.ICE_MAX_M, Math.max(0, h));
+      thickness[i] = h;
+    }
+  }
+  iceCache.set(latDeg, thickness);
+  return thickness;
+}
+
+// Cover at an integer latitude, including ice drifted from up to ICE_DRIFT_DEG poleward (fading with distance).
+function driftedIceCover(latDeg, day) {
+  const toPole = latDeg >= 0 ? 1 : -1;
+  let cover = 0;
+  for (let k = 0; k <= PLANET.ICE_DRIFT_DEG; k++) {
+    const lat = latDeg + toPole * k;
+    if (Math.abs(lat) > 90) break;
+    const local = smoothstep(0, PLANET.ICE_FULL_M, seaIceThickness(lat)[day]);
+    cover = Math.max(cover, local * (1 - k / (PLANET.ICE_DRIFT_DEG + 1)));
+  }
+  return cover;
+}
+
+// Fraction of the sea surface covered by ice (0–1) at a latitude on a sol of the year.
+export function seaIceCover(lat, sol) {
+  if (Math.abs(lat) < ICE_MIN_LAT) return 0;
+  const day = Math.floor(wrap(sol, SOLS));
+  const lo = Math.floor(lat);
+  const t = lat - lo;
+  return driftedIceCover(lo, day) * (1 - t) + driftedIceCover(Math.min(90, lo + 1), day) * t;
+}
+
+// Seasonal snow cover (0–1) on land from the seasonal mean temperature at the point's altitude.
+export function snowCover(c, sol) {
+  if (c.isWater) return 0;
+  const temp = seasonalSurfaceTemp(c.lat, sol, false) - (PLANET.LAPSE_K_PER_KM * c.altitude) / 1000;
+  return 1 - smoothstep(PLANET.SNOW_FULL_C, PLANET.SNOW_NONE_C, temp);
+}
+
+// Permanent land ice: above the snowline (the nival zone) or in an ice region such as Planum Australe.
+export function isGlacier(c) {
+  return !c.isWater && (c.vertZone?.id === 'nival' || c.region?.vegetation === 'ice');
+}
+
+// Land temperatures in the profile texture are stored as bytes across this range (°C).
+export const POLAR_TEMP_RANGE = [-60, 60];
+
+// Latitude profile for the shader, rows from 90°N: R = sea-ice cover, G = seasonal sea-level land temperature.
+export function buildPolarProfile(sol, rows = 512) {
+  const [lo, hi] = POLAR_TEMP_RANGE;
+  const out = new Uint8Array(rows * 4);
+  for (let row = 0; row < rows; row++) {
+    const lat = 90 - ((row + 0.5) * 180) / rows;
+    const temp = Math.min(1, Math.max(0, (seasonalSurfaceTemp(lat, sol, false) - lo) / (hi - lo)));
+    out.set([Math.round(seaIceCover(lat, sol) * 255), Math.round(temp * 255), 0, 255], row * 4);
+  }
+  return out;
+}
+
+// Permanent land ice per texel (255 = glacier), sampled like buildZoneIds so it matches the altitude layer.
+export function buildIceMask({ elev, width, height }, seaLevel, step = 2) {
+  const w = Math.floor(width / step);
+  const h = Math.floor(height / step);
+  const mask = new Uint8Array(w * h);
+  const p = makePoint(0, 0);
+  const half = step >> 1;
+  const iceRegions = COMPILED_REGIONS.filter((c) => c.region.vegetation === 'ice');
+
+  for (let y = 0; y < h; y++) {
+    const lat = 90 - ((y + 0.5) * 180) / h;
+    const { snowline } = vegetationLines(latitudeZone(lat));
+    // Region order matters (first match wins), so rows that may hold an ice region check all regions there.
+    const needsRegions = iceRegions.some((c) => lat >= c.latMin && lat <= c.latMax);
+    const candidates = needsRegions ? COMPILED_REGIONS.filter((c) => lat >= c.latMin && lat <= c.latMax) : [];
+    const srcRow = Math.min(height - 1, y * step + half) * width;
+    for (let x = 0; x < w; x++) {
+      const altitude = elev[srcRow + Math.min(width - 1, x * step + half)] - seaLevel;
+      if (altitude < 0) continue;
+      let ice = altitude >= snowline;
+      if (!ice && needsRegions) {
+        setPoint(p, ((x + 0.5) * 360) / w, lat);
+        ice = findRegion(candidates, p, false, altitude)?.vegetation === 'ice';
+      }
+      if (ice) mask[y * w + x] = 255;
+    }
+  }
+  return { mask, width: w, height: h };
 }
 
 const BELT_BLEND_FRACTION = 0.1;
