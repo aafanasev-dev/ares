@@ -13,6 +13,19 @@ A regional climate can hold several biomes (coast vs interior, altitude bands); 
 humidity and wind (which sets the waves). Each biome lists its place, climate with precipitation, vegetation and
 fauna, daily changes and seasons. It is worldbuilding text built on `planet_geography.md` and the `REGIONS` in
 `geography.js`; the code does not use it yet. When a region, zone or climate number changes, update `biomes.md` too.
+
+`rivers.md` describes the major long-term rivers, found by a one-off drainage analysis of the elevation data at sea
+level +2,000 m combined with the climate model (runoff, spilling crater lakes, desert losses). Its method section
+records the assumptions. Worldbuilding text only; the code does not use it.
+
+`gen_bioms/` holds one photorealistic ChatGPT image prompt per biome, named `{code}-{name}.md` (e.g.
+`L05-plateau-core-cold-steppe.md`). Each prompt repeats a shared "Setting: the planet Ares" block so it works on its
+own. When a biome in `biomes.md` changes, update its prompt.
+
+`gen_bioms/gen_pict.py PROMPT.md…` (stdlib only) sends the `## Prompt` section to the OpenAI image API
+(`OPENAI_API_KEY`, optional `OPENAI_BASE_URL`) and saves the picture next to the prompt with the returned format's
+extension. If a picture already exists it exits without generating anything (unless `--force`); `--dry-run` prints the request without a
+call; `--variation N` appends a Variations bullet and saves as `NAME-vN`. Each real call costs money.
 A time panel (day of year and time of day, set to real Mars "now" on load) lights the globe with the real sun, so
 the night side is in shadow, and the info panel shows a possible current weather for that moment.
 
@@ -26,6 +39,7 @@ It is a static site: vanilla ES modules with three.js 0.170.0 loaded from the js
 docker compose up -d --build           # nginx container on http://localhost:9080
 ARES_PORT=9180 docker compose up -d    # other host port if 9080 is taken
 python3 tools/prepare_data.py          # regenerate data/elevation.{bin,json} from the NASA MOLA download
+python3 gen_bioms/gen_pict.py gen_bioms/L05-plateau-core-cold-steppe.md  # biome picture (needs OPENAI_API_KEY)
 ```
 
 `fetch()` does not work from `file://`, so always open the page through a server.
