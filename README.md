@@ -31,17 +31,17 @@ python3 -m http.server 8000        # fetch() does not work from file://
 ## Docker
 
 ```sh
-docker compose up -d --build      # then open http://localhost:8080
+docker compose up -d --build      # then open http://localhost:9080
 docker compose down               # stop
 ```
 
-If port 8080 is taken, pick another host port: `ARES_PORT=9000 docker compose up -d --build`.
+If port 9080 is taken, pick another host port: `ARES_PORT=9180 docker compose up -d --build`.
 
 Or without Compose:
 
 ```sh
 docker build -t ares .
-docker run -d -p 8080:8080 ares
+docker run -d -p 9080:9080 ares
 ```
 
 The image is a non-root nginx serving the static files. It already contains the prepared elevation data

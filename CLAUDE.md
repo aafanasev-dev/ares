@@ -15,8 +15,8 @@ It is a static site: vanilla ES modules with three.js 0.170.0 loaded from the js
 
 ```sh
 ./run.sh [port]                        # python3 http.server on 8000 (next free port); prepares data if missing
-docker compose up -d --build           # nginx container on http://localhost:8080
-ARES_PORT=9000 docker compose up -d    # other host port (8080 is often taken on this machine)
+docker compose up -d --build           # nginx container on http://localhost:9080
+ARES_PORT=9180 docker compose up -d    # other host port if 9080 is taken
 python3 tools/prepare_data.py          # regenerate data/elevation.{bin,json} from the NASA MOLA download
 ```
 
@@ -91,7 +91,8 @@ temperature (`vegetationLines`).
 
 ## Docker
 
-- The `Dockerfile` copies an **explicit list** of runtime files into `nginxinc/nginx-unprivileged` (port 8080).
+- The `Dockerfile` copies an **explicit list** of runtime files into `nginxinc/nginx-unprivileged`. Its nginx is moved from 8080 to port 9080 by a `sed` in the Dockerfile
+  (8080 is taken on both this machine and the production server).
   Add any new runtime file to its `COPY` lines.
 - nginx's default config is deliberate. It serves `.js` as `application/javascript` and sends `Content-Length`
   for `elevation.bin`, which the loading progress bar needs. Don't enable gzip for the `.bin`.
