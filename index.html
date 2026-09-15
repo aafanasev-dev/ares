@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Planet Map</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <canvas id="globe"></canvas>
+
+  <div id="loading">
+    <p id="loading-text">Loading elevation data…</p>
+    <div class="bar"><div id="loading-bar"></div></div>
+  </div>
+
+  <aside id="panel">
+    <h1>Planet map</h1>
+
+    <label for="level">Sea level above the Mars datum</label>
+    <div class="level-row">
+      <input type="range" id="level" min="-8500" max="21500" step="10" value="2000" disabled>
+      <input type="number" id="level-num" min="-8500" max="21500" step="10" value="2000" disabled>
+      <span class="unit">m</span>
+    </div>
+
+    <div class="stat">
+      <span>Surface under water</span>
+      <strong id="flooded">–</strong>
+    </div>
+
+    <div class="presets">
+      <button type="button" data-level="2000" disabled>Planet datum +2 km</button>
+    </div>
+
+    <label for="exag">Relief exaggeration <output id="exag-value">5×</output></label>
+    <input type="range" id="exag" min="0" max="20" step="0.5" value="5">
+
+    <h2>Layers</h2>
+
+    <label for="layer">Zones</label>
+    <select id="layer">
+      <option value="none">None</option>
+      <option value="belts" selected>Climate belts</option>
+      <option value="regions">Regional climates</option>
+      <option value="altitude">Altitude zones</option>
+    </select>
+
+    <label for="opacity">Zone opacity <output id="opacity-value">50%</output></label>
+    <input type="range" id="opacity" min="0" max="1" step="0.05" value="0.5">
+
+    <div id="legend"></div>
+
+    <label class="check"><input type="checkbox" id="landmarks" checked> Landmarks</label>
+    <label class="check"><input type="checkbox" id="rotate"> Auto-rotate</label>
+
+    <p class="hint">Click the globe or a landmark to see its weather.</p>
+    <p class="credit">Elevation: MGS MOLA MEGDR (NASA / GSFC). Climate: planet_geography.md.</p>
+  </aside>
+
+  <aside id="info" hidden>
+    <button type="button" id="info-close" aria-label="Close">×</button>
+    <div id="info-body"></div>
+  </aside>
+
+  <div id="hover" hidden></div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+.git
+data/raw
+*.part
+tools
+run.sh
+README.md
+planet_geography.md
