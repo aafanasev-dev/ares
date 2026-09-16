@@ -8,15 +8,19 @@ An interactive 3D globe of an imaginary ocean planet ("Ares") built on real Mars
 described in `planet_geography.md`: Mars at 1.02 AU, a 1 bar atmosphere, and sea level at +2,000 m above the Mars
 datum. The globe draws the climate zones and landmarks from that description, and clicking a place shows its weather.
 
-`biomes.md` splits those climates into **biomes**: areas of land or water with similar climate, vegetation and fauna.
-A regional climate can hold several biomes (coast vs interior, altitude bands); sea biomes are set by temperature,
-humidity and wind (which sets the waves). Each biome lists its place, climate with precipitation, vegetation and
-fauna, daily changes and seasons. It is worldbuilding text built on `planet_geography.md` and the `REGIONS` in
-`geography.js`; the code does not use it yet. When a region, zone or climate number changes, update `biomes.md` too.
+`biomes.md` splits those climates into **biomes**: areas of land, fresh water or sea with similar climate, vegetation
+and fauna. A regional climate can hold several biomes (coast vs interior, altitude bands); sea biomes are set by
+temperature, humidity and wind (which sets the waves). Each biome lists its place, climate with precipitation,
+vegetation and fauna, daily changes and seasons. Its §5 holds the **river biomes** (R01–R09): a river carries its own
+habitat into every biome it crosses, so corridors, falls, lakes, deltas and plumes are biomes of their own, and
+`rivers.md` and `biomes.md` cross-reference each other by code. It is worldbuilding text built on `planet_geography.md` and the `REGIONS` in
+`geography.js`. `biomes.js` is its machine-readable transcription and the map's default layer, so when a region, zone
+or climate number changes, update `biomes.md` **and** `biomes.js`.
 
 `rivers.md` describes the major long-term rivers, found by a one-off drainage analysis of the elevation data at sea
 level +2,000 m combined with the climate model (runoff, spilling crater lakes, desert losses). Its method section
-records the assumptions. Worldbuilding text only; the code does not use it.
+records the assumptions. `tools/trace_rivers.py` reproduces those courses from the elevation grid into
+`data/rivers.json`, which the globe draws.
 
 `gen_bioms/` holds one photorealistic ChatGPT image prompt per biome, named `{code}-{name}.md` (e.g.
 `L05-plateau-core-cold-steppe.md`). Each prompt repeats a shared "Setting: the planet Ares" block so it works on its
@@ -95,8 +99,8 @@ Rules for `REGIONS`:
   key throws at load. What grows there goes in `flora` (shown under "About this region"), not in `precipNote`.
 
 **`climate.js` is the single source of truth for what zone a point is in.** Two consumers use it, so they always agree:
-- `buildZoneIds()`: the overlay texture, sampled every 2nd elevation pixel. The regions layer takes about 130 ms
-  and is rebuilt (debounced) when the sea level changes.
+- `buildZoneIds()`: the overlay texture, sampled every 2nd elevation pixel. The biome layer takes about 540 ms (and
+  ~770 ms with the coast field and the colour grids) and is rebuilt (debounced) when the sea level changes.
 - `classify()` + `pointClimate()`: the info panel and the hover readout.
 
 Temperature drops 2.5 K per km of land altitude, and pressure is `1013 hPa · exp(−alt / 22.3 km)`. The treeline
@@ -141,13 +145,11 @@ checkbox off, the animation loop points `uSunDir` from the upper left of the cam
 - `uColorMode` picks the colour source (`COLOR_MODES` in `main.js`):
   - 0, altitude: `uPalette` (256×1) looked up by id, with thin outlines where neighbouring ids differ.
   - 1, belts: `buildBeltGradient()`, a 1×1024 latitude texture where each border blends over 10% of both belts' spans.
-  - 2, regions (the default layer): `buildRegionColors()`, two premultiplied RGBA grids for land and water. Each is
+  - 2, biomes (the default layer): `buildZoneColors()`, two premultiplied RGBA grids for land and water. Each is
     blurred only within its own surface class (masked, normalised box blur, `REGION_BLEND_DEG`), and the shader picks
-    between them with the elevation coastline mask, so regions blend into each other but never across the coast.
-    Built in `rebuildOverlay` together with the ids, at half the zone-texture resolution (`REGION_COLOR_SCALE`),
-    ~300 ms total.
-- Selection never changes colours. The selected zone (`uSelectedId`, found through the id texture) only gets a dashed
-  white outline, on every layer.
+    between them with the elevation coastline mask, so biomes blend into each other but never across the coast.
+    Built in `rebuildOverlay` together with the ids, at half the zone-texture resolution (`REGION_COLOR_SCALE`).
+- Selection draws nothing on the globe at all: clicking only opens the info panel and marks the row in the legend.
 
 **Coordinate conventions in `main.js`.**
 - Shader texture coordinates are `s = east lon / 360` and `t = 0` at 90°N (`vTex = (uv.x, 1 − uv.y)`).

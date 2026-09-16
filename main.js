@@ -1,16 +1,22 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+import { Line2 } from 'three/addons/lines/Line2.js';
+import { LineGeometry } from 'three/addons/lines/LineGeometry.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 import { OBJECTS, OBJECT_GROUPS, PLANET } from './geography.js';
 import {
   LAYERS,
   POLAR_TEMP_RANGE,
+  azonalFor,
+  biomeFor,
   buildBeltGradient,
   buildIceMask,
   buildPolarProfile,
-  buildRegionColors,
+  buildZoneColors,
   buildZoneIds,
   classify,
+  coastDistance,
   dayOfYear,
   momentWeather,
   normalizeLon,
@@ -18,6 +24,7 @@ import {
   zoneFor,
   zoneIndex,
 } from './climate.js';
+import { BIOME_GROUPS } from './biomes.js';
 import { localSolarHours, marsNow, solFromLs, sunAt } from './astro.js';
 
 const MARS_RADIUS_M = 3389500;
@@ -26,7 +33,7 @@ const ZONE_STEP = 2; // zone texture resolution = elevation grid / ZONE_STEP
 const BELT_GRADIENT_ROWS = 1024;
 const POLAR_ROWS = 512; // latitude rows of the sea-ice / land-temperature profile
 const BERG_CELL_M = 40000; // size of the large iceberg cells
-const COLOR_MODES = { altitude: 0, belts: 1, regions: 2 }; // uColorMode per layer
+const COLOR_MODES = { altitude: 0, belts: 1, biomes: 2 }; // uColorMode per layer
 const REGION_COLOR_SCALE = 2; // region colour grids at 1/2 of the zone texture resolution
 const MINOR_LABEL_DISTANCE = 2.3; // camera distance below which rank-2 labels are shown
 const CLICK_SLOP_PX = 5;
@@ -49,6 +56,7 @@ const ui = {
   opacity: $('opacity'),
   opacityValue: $('opacity-value'),
   landmarks: $('landmarks'),
+  rivers: $('rivers'),
   legend: $('legend'),
   info: $('info'),
   infoBody: $('info-body'),
@@ -103,7 +111,6 @@ const fragmentShader = /* glsl */ `
   uniform vec2 uZoneTexel;
   uniform sampler2D uPalette;
   uniform float uOverlayOpacity;
-  uniform float uSelectedId;
   uniform sampler2D uBeltGradient;
   uniform float uColorMode;
   uniform sampler2D uRegionLand;
@@ -255,9 +262,9 @@ const fragmentShader = /* glsl */ `
     float edge = step(0.5,
       abs(zoneAt(vTex + vec2(px.x, 0.0)) - id) + abs(zoneAt(vTex - vec2(px.x, 0.0)) - id) +
       abs(zoneAt(vTex + vec2(0.0, px.y)) - id) + abs(zoneAt(vTex - vec2(0.0, px.y)) - id));
-    // Colour source per layer (uColorMode): 0 = palette per id, 1 = belt gradient, 2 = smooth region
-    // colours. Regions come as premultiplied land and water grids picked by the coastline mask, so they
-    // blend between regions but stay sharp at the coast. Selection never changes colours.
+    // Colour source per layer (uColorMode): 0 = palette per id, 1 = belt gradient, 2 = smooth biome
+    // colours. Biomes come as premultiplied land and water grids picked by the coastline mask, so they
+    // blend into each other but stay sharp at the coast. Selection never changes anything on the globe.
     float beltMode = 1.0 - step(0.5, abs(uColorMode - 1.0));
     float regionMode = step(1.5, uColorMode);
     vec3 paletteColor = texture2D(uPalette, vec2((id + 0.5) / 256.0, 0.5)).rgb;
@@ -265,13 +272,12 @@ const fragmentShader = /* glsl */ `
     vec4 region = mix(texture2D(uRegionLand, vTex), texture2D(uRegionWater, vTex), wet);
     float visible = step(0.001, uOverlayOpacity);
     float hasZone = step(0.5, id) * visible;
-    float selected = step(0.5, uSelectedId) * (1.0 - step(0.5, abs(id - uSelectedId)));
     float shade = 0.3 + 0.7 * mix(landDiffuse, waterDiffuse, wet);
     float alpha = min(uOverlayOpacity, 0.92);
     vec3 flatColor = mix(color, zoneColor * shade, alpha * hasZone);
     vec3 smoothColor = color * (1.0 - region.a * alpha) + region.rgb * shade * alpha;
     color = mix(flatColor, smoothColor, regionMode * visible);
-    float outline = edge * hasZone * (1.0 - selected) * (1.0 - beltMode) * (1.0 - regionMode);
+    float outline = edge * hasZone * (1.0 - beltMode) * (1.0 - regionMode);
     color = mix(color, zoneColor * 0.3, outline * clamp(0.35 + uOverlayOpacity, 0.0, 0.95));
 
     // Ice and snow, drawn over every layer. uPolar holds sea-ice cover (r) and the seasonal sea-level land
@@ -310,15 +316,6 @@ const fragmentShader = /* glsl */ `
       vec3 snowColor = mix(vec3(0.93, 0.95, 0.98), vec3(0.82, 0.89, 0.96), glacier);
       color = mix(color, snowColor * (iceAmbient + 0.84 * sqrt(landDiffuse)), landIce * 0.95);
     }
-
-    // Dashed white outline around the selected zone: a checkerboard in map space (longitude scaled by
-    // cos(lat) so dashes keep their length near the poles). Cells are ~6 px, snapped to a power of two
-    // so the dashes stay attached to the map while it rotates.
-    float latDeg = 90.0 - vTex.y * 180.0;
-    float lonDeg = vTex.x * 360.0 * max(cos(radians(latDeg)), 0.05);
-    float cell = pow(2.0, ceil(log2(max(fwidth(vTex.y) * 180.0 * 6.0, 1e-4))));
-    float dash = mod(floor(lonDeg / cell) + floor(latDeg / cell), 2.0);
-    color = mix(color, vec3(1.0), edge * selected * hasZone * dash * 0.95);
 
     // Thin dusty atmosphere at the limb.
     float rim = pow(1.0 - max(dot(up, V), 0.0), 3.0);
@@ -600,9 +597,15 @@ function weatherList(rows) {
     .join('')}</dl>`;
 }
 
-function infoHtml(object, c, w, now) {
-  const title = object?.name ?? c.region?.name ?? (c.isWater ? 'Open ocean' : 'Land');
-  const kicker = object ? OBJECT_GROUPS[object.group] : c.isWater ? 'Sea' : 'Land';
+function infoHtml(object, c, w, now, biome, azonal = []) {
+  const title = object?.name ?? biome?.name ?? (c.isWater ? 'Open ocean' : 'Land');
+  const kicker = object
+    ? OBJECT_GROUPS[object.group]
+    : biome
+      ? `${BIOME_GROUPS[biome.group]} · ${biome.code}`
+      : c.isWater
+        ? 'Sea'
+        : 'Land';
   const surface = c.isWater ? `${formatMeters(c.depth)} deep` : `${formatMeters(c.altitude)} above sea level`;
 
   const rows = [
@@ -634,7 +637,9 @@ function infoHtml(object, c, w, now) {
     ['Conditions', now.conditions, 'A possible sky for this sol, not a forecast'],
     ['Temperature', `${fmt(now.tempNow)} °C`, `Today ${fmtRange([now.tempLow, now.tempHigh], ' °C')}`],
     ['Humidity', `${fmt(now.rh)}% RH`],
-    ['Chance of rain', `${fmt(now.rainChance * 100)}% today`],
+    ['Rain', now.rainingNow ? 'Raining' : now.rainsToday ? 'Not right now (rain today)' : 'No rain'],
+    ['Surface wind', `${fmt(now.windSpeed, 1)} m/s`, now.windText],
+    now.waves && ['Waves', `${fmt(now.waves.height, 1)} m at ${fmt(now.waves.period)} s`, 'Fully developed sea'],
     c.isWater
       ? ['Sea ice', seaIceLabel(now.seaIce)]
       : (now.glacier || now.snow >= 0.05) &&
@@ -645,6 +650,21 @@ function infoHtml(object, c, w, now) {
   if (!c.isWater && w.tempMean[1] < 0) notes.unshift('Annual mean below freezing');
 
   const sections = [];
+  if (biome) {
+    sections.push(
+      `<h3>${esc(biome.code)} · ${esc(biome.name)}</h3><p>${esc(biome.place)}</p>` +
+        `<p><strong>Vegetation and fauna:</strong> ${esc(biome.vegetation)}</p>` +
+        `<p><strong>Through the day:</strong> ${esc(biome.daily)}</p>` +
+        `<p><strong>Seasons:</strong> ${esc(biome.seasons)}</p>`,
+    );
+  }
+  if (azonal.length) {
+    sections.push(
+      `<h3>Also here</h3><ul class="notes">${azonal
+        .map((b) => `<li><strong>${esc(b.code)}</strong> ${esc(b.name)} — ${esc(b.summary)}</li>`)
+        .join('')}</ul>`,
+    );
+  }
   if (c.region) {
     const heading = c.region.name === title ? 'About this region' : c.region.name;
     const flora = c.region.flora ? `<p><strong>Vegetation:</strong> ${esc(c.region.flora)}</p>` : '';
@@ -657,7 +677,9 @@ function infoHtml(object, c, w, now) {
     <p class="kicker">${esc(kicker)}</p>
     <h2>${esc(title)}</h2>
     <p class="coords">${fmtLat(c.lat)} ${fmtLon(c.lon)} · ${surface}</p>
-    <div class="chips">${chip(c.latZone)}${chip(c.vertZone)}${chip(c.region)}</div>
+    <div class="chips">${chip(biome)}${chip(c.latZone)}${chip(c.vertZone)}${
+      c.region?.name === biome?.name ? '' : chip(c.region)
+    }</div>
     ${
       object
         ? `<p class="object-notes">${esc(object.notes)} · gazetteer elevation ${esc(object.elevation)}</p>
@@ -698,11 +720,15 @@ async function main() {
   controls.maxDistance = 8;
   controls.autoRotateSpeed = 0.5;
 
+  // Line2 draws in screen space, so every river material needs the viewport size.
+  const riverMaterials = [];
+
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
     labelRenderer.setSize(window.innerWidth, window.innerHeight);
+    for (const m of riverMaterials) m.resolution.set(window.innerWidth, window.innerHeight);
   });
 
   let data;
@@ -734,7 +760,6 @@ async function main() {
       uZoneTexel: { value: zoneTextures.texel },
       uPalette: { value: zoneTextures.palette },
       uOverlayOpacity: { value: 0 },
-      uSelectedId: { value: 0 },
       uBeltGradient: { value: zoneTextures.gradient },
       uColorMode: { value: 0 },
       uRegionLand: { value: zoneTextures.regionLand },
@@ -760,15 +785,17 @@ async function main() {
 
   // --- Zone overlay -------------------------------------------------------
   let overlayTimer = 0;
+  let coastField = null; // km to the nearest coast per zone texel; the biome layer's coast/interior test
   function rebuildOverlay() {
     clearTimeout(overlayTimer);
-    const zones = buildZoneIds(data, seaLevel, layer, ZONE_STEP);
+    coastField = coastDistance(data, seaLevel, ZONE_STEP);
+    const zones = buildZoneIds(data, seaLevel, layer, ZONE_STEP, coastField.dist);
     zoneTextures.ids.image.data.set(zones.ids);
     zoneTextures.ids.needsUpdate = true;
     zoneTextures.iceMask.image.data.set(buildIceMask(data, seaLevel, ZONE_STEP).mask);
     zoneTextures.iceMask.needsUpdate = true;
-    if (layer === 'regions') {
-      const { land, water } = buildRegionColors(zones, data, seaLevel, ZONE_STEP, REGION_COLOR_SCALE);
+    if (layer === 'biomes') {
+      const { land, water } = buildZoneColors(LAYERS[layer].zones, zones, data, seaLevel, ZONE_STEP, REGION_COLOR_SCALE);
       zoneTextures.regionLand.image.data.set(land);
       zoneTextures.regionWater.image.data.set(water);
       zoneTextures.regionLand.needsUpdate = true;
@@ -813,13 +840,23 @@ async function main() {
     material.uniforms.uOverlayOpacity.value = LAYERS[layer] ? opacity : 0;
   }
 
+  // Distance to the coast at a point, from the field the overlay build leaves behind.
+  function coastAt(lon, lat) {
+    if (!coastField) return null;
+    const { dist, width: cw, height: ch } = coastField;
+    const x = Math.min(cw - 1, Math.floor((normalizeLon(lon) / 360) * cw));
+    const y = THREE.MathUtils.clamp(Math.floor(((90 - lat) / 180) * ch), 0, ch - 1);
+    return dist[y * cw + x];
+  }
+
+  // The selected zone is only marked in the legend; nothing is drawn on the globe.
   function updateHighlight() {
     let id = legendHighlight;
     if (!id && selection) {
       const { lon, lat } = selection;
-      id = zoneIndex(layer, zoneFor(layer, classify(lon, lat, elevationAt(data, lon, lat), seaLevel)));
+      const c = classify(lon, lat, elevationAt(data, lon, lat), seaLevel);
+      id = zoneIndex(layer, zoneFor(layer, c, { coastKm: coastAt(lon, lat) }));
     }
-    material.uniforms.uSelectedId.value = id;
     for (const item of ui.legend.children) item.classList.toggle('active', Number(item.dataset.index) === id);
   }
 
@@ -855,6 +892,7 @@ async function main() {
       const surface = Math.max(elevationAt(data, m.object.lon, m.object.lat), seaLevel);
       m.label3d.position.copy(m.normal).multiplyScalar(1 + (surface / MARS_RADIUS_M) * exaggeration);
     }
+    placeRivers();
   }
 
   function updateMarkerVisibility() {
@@ -866,6 +904,107 @@ async function main() {
     labelRenderer.domElement.classList.toggle('zoomed', camera.position.length() < MINOR_LABEL_DISTANCE);
   }
 
+  // --- Rivers and lakes ---------------------------------------------------
+  // Courses traced by tools/trace_rivers.py over the same elevation grid (data/rivers.json). Line width follows
+  // discharge, so the Solis at 49,700 m³/s reads as the great river it is next to the Pavonis at 3,400.
+  const riverGroup = new THREE.Group();
+  scene.add(riverGroup);
+  let riverData = null;
+
+  const RIVER_COLOR = 0x74d0f2;
+  const LAKE_COLOR = 0xa8e6f7;
+  const RIVER_LIFT = 1.0015; // clear of the surface, so the globe does not z-fight the line
+  const RIVER_NEAR_KM = 60; // how close a click counts as "on the river", for the azonal biomes
+  const LAKE_LARGE_KM2 = 100000; // R05 freshwater inland sea, against R06 deep crater lake
+
+  function greatCircleKm(aLon, aLat, bLon, bLat) {
+    const rad = Math.PI / 180;
+    const dLat = (bLat - aLat) * rad;
+    const dLon = (bLon - aLon) * rad;
+    const h =
+      Math.sin(dLat / 2) ** 2 + Math.cos(aLat * rad) * Math.cos(bLat * rad) * Math.sin(dLon / 2) ** 2;
+    return 2 * (MARS_RADIUS_M / 1000) * Math.asin(Math.min(1, Math.sqrt(h)));
+  }
+
+  function pointInRing(lon, lat, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const [xi, yi] = ring[i];
+      const [xj, yj] = ring[j];
+      if (yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  // Vertices at the displaced surface, rebuilt whenever the sea level or the exaggeration moves.
+  function pathPositions(coords) {
+    const exaggeration = Number(ui.exag.value);
+    const out = new Float32Array(coords.length * 3);
+    for (let i = 0; i < coords.length; i++) {
+      const [lon, lat] = coords[i];
+      const surface = Math.max(elevationAt(data, lon, lat), seaLevel);
+      const radius = (1 + (surface / MARS_RADIUS_M) * exaggeration) * RIVER_LIFT;
+      lonLatToVector(lon, lat, radius).toArray(out, i * 3);
+    }
+    return out;
+  }
+
+  function addPath(coords, color, width) {
+    const geometry = new LineGeometry();
+    geometry.setPositions(pathPositions(coords));
+    const material = new LineMaterial({ color, linewidth: width, transparent: true, opacity: 0.9 });
+    material.resolution.set(window.innerWidth, window.innerHeight);
+    riverMaterials.push(material);
+    const line = new Line2(geometry, material);
+    line.userData.coords = coords;
+    riverGroup.add(line);
+  }
+
+  function placeRivers() {
+    for (const line of riverGroup.children) line.geometry.setPositions(pathPositions(line.userData.coords));
+  }
+
+  async function loadRivers() {
+    try {
+      const res = await fetch('data/rivers.json');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      riverData = await res.json();
+    } catch (err) {
+      console.warn('Rivers are not drawn:', err.message); // the globe is still usable without them
+      return;
+    }
+    for (const river of riverData.rivers) {
+      addPath(river.points, RIVER_COLOR, 1.2 + 2.6 * Math.sqrt(river.discharge / 49700));
+      for (const lake of river.lakes) {
+        if (lake.points.length < 4) continue;
+        addPath([...lake.points, lake.points[0]], LAKE_COLOR, 1.4);
+      }
+    }
+    riverGroup.visible = ui.rivers.checked;
+  }
+
+  // Which drawn river or lake a point sits on, for the azonal river biomes (R01–R09).
+  function riverContext(lon, lat) {
+    if (!riverData) return {};
+    for (const river of riverData.rivers) {
+      for (const lake of river.lakes) {
+        if (lake.points.length > 3 && pointInRing(lon, lat, lake.points)) {
+          return { lake: lake.areaKm2 >= LAKE_LARGE_KM2 ? 'large' : 'deep' };
+        }
+      }
+    }
+    let nearest = Infinity;
+    let atMouth = false;
+    for (const river of riverData.rivers) {
+      for (const [rlon, rlat] of river.points) {
+        nearest = Math.min(nearest, greatCircleKm(lon, lat, rlon, rlat));
+      }
+      if (greatCircleKm(lon, lat, river.mouth[0], river.mouth[1]) <= RIVER_NEAR_KM) atMouth = true;
+    }
+    if (nearest > RIVER_NEAR_KM) return {};
+    return { river: atMouth ? 'mouth' : true };
+  }
+
   // --- Selection and info panel -------------------------------------------
   function renderInfo() {
     ui.info.hidden = !selection;
@@ -873,8 +1012,10 @@ async function main() {
     if (!selection) return;
     const { lon, lat, object } = selection;
     const c = classify(lon, lat, elevationAt(data, lon, lat), seaLevel);
+    const ctx = { coastKm: coastAt(lon, lat), ...riverContext(lon, lat) };
+    const biome = biomeFor(c, ctx);
     const w = pointClimate(c);
-    ui.infoBody.innerHTML = infoHtml(object, c, w, momentWeather(c, w, sun));
+    ui.infoBody.innerHTML = infoHtml(object, c, w, momentWeather(c, w, sun, biome), biome, azonalFor(c, ctx));
   }
 
   function select(next) {
@@ -926,6 +1067,9 @@ async function main() {
   ui.rotate.addEventListener('change', () => {
     controls.autoRotate = ui.rotate.checked;
   });
+  ui.rivers.addEventListener('change', () => {
+    riverGroup.visible = ui.rivers.checked;
+  });
   // --- Sun and season -----------------------------------------------------
   // The hour slider holds minutes of Mars Coordinated Time (time at 0°E).
   function updateSun() {
@@ -965,6 +1109,7 @@ async function main() {
   ui.levelNum.disabled = false;
   setLevel(Number(ui.level.value));
   applyLayer();
+  loadRivers();
 
   // --- Picking: hover readout and click selection -------------------------
   const raycaster = new THREE.Raycaster();
@@ -1011,7 +1156,7 @@ async function main() {
     }
     const c = classify(point.lon, point.lat, elevationAt(data, point.lon, point.lat), seaLevel);
     const surface = c.isWater ? `${formatMeters(c.depth)} deep` : `${formatMeters(c.altitude)} above sea`;
-    const zone = c.region?.name ?? c.latZone.name;
+    const zone = biomeFor(c, { coastKm: coastAt(point.lon, point.lat) })?.name ?? c.latZone.name;
     const local = fmtTime(localSolarHours(c.lon, sun));
     ui.hover.textContent = `${fmtLat(c.lat)} ${fmtLon(c.lon)} · ${surface} · ${zone} · ${local} local`;
     ui.hover.hidden = false;

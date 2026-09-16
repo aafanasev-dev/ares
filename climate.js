@@ -1,14 +1,16 @@
 // Zone classification and local climate. Pure functions, shared by the overlay texture and the
 // info panel so the map and the numbers always agree.
 import { PLANET, LATITUDE_ZONES, VERTICAL_ZONES, REGIONS } from './geography.js';
+import { AZONAL_BIOMES, COAST_KM, DRAWN_BIOMES } from './biomes.js';
 import { dailyInsolation, dayLength, hemisphereSeason, localSolarHours, orbitAt, sunElevation } from './astro.js';
 
 const DEG = Math.PI / 180;
 const NO_RAIN_SEASON = { type: 'none', strength: 0 };
+const PLANET_RADIUS_KM = 3389.5; // for ground distances; main.js keeps the same figure in metres for the mesh
 
 export const LAYERS = {
+  biomes: { label: 'Biomes', zones: DRAWN_BIOMES },
   belts: { label: 'Climate belts', zones: LATITUDE_ZONES },
-  regions: { label: 'Regional climates', zones: REGIONS },
   altitude: { label: 'Altitude zones', zones: VERTICAL_ZONES },
 };
 
@@ -172,11 +174,165 @@ export function classify(lon, lat, elevation, seaLevel) {
   };
 }
 
-export function zoneFor(layer, c) {
+export function zoneFor(layer, c, ctx) {
+  if (layer === 'biomes') return biomeFor(c, ctx);
   if (layer === 'belts') return c.latZone;
-  if (layer === 'regions') return c.region;
   if (layer === 'altitude') return c.vertZone;
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Biomes. A biome is a classified point refined by altitude band, depth and distance to the coast; `ctx` carries
+// what classify() cannot know on its own: {coastKm, river, lake}.
+
+function biomeMatches(b, c, ctx) {
+  if (b.group === 'air') return false;
+  if (b.group === 'land' ? c.isWater : !c.isWater) return false;
+  // A biome may name a region, a belt, or both; either one matching is enough.
+  if ((b.region || b.belt) && !(b.region && c.region?.id === b.region) && !(b.belt && c.latZone?.id === b.belt)) {
+    return false;
+  }
+  if (b.alt && !c.isWater) {
+    if (b.alt[0] != null && c.altitude < b.alt[0]) return false;
+    if (b.alt[1] != null && c.altitude > b.alt[1]) return false;
+  }
+  if (b.depth && c.isWater) {
+    if (b.depth[0] != null && c.depth < b.depth[0]) return false;
+    if (b.depth[1] != null && c.depth > b.depth[1]) return false;
+  }
+  if (b.absLat && (Math.abs(c.lat) < b.absLat[0] || Math.abs(c.lat) > b.absLat[1])) return false;
+  if (b.lon) {
+    const [west, east] = b.lon;
+    const inside = west <= east ? c.lon >= west && c.lon <= east : c.lon >= west || c.lon <= east;
+    if (!inside) return false;
+  }
+  if (b.coast && ctx?.coastKm != null) {
+    if ((ctx.coastKm <= COAST_KM) !== (b.coast === 'coast')) return false;
+  }
+  return true;
+}
+
+// The biome drawn at a point, or null where nothing matches.
+//
+// A region match always beats a belt match, whatever order the table is in. Without this, a belt-anchored biome
+// swallows every region biome sharing its belt that happens to come later: L14 (northern trade belt, no region)
+// took all of Olympus and Elysium, summits included.
+const BIOMES_BY_REGION = new Map();
+for (const b of DRAWN_BIOMES) {
+  if (!b.region) continue;
+  if (!BIOMES_BY_REGION.has(b.region)) BIOMES_BY_REGION.set(b.region, []);
+  BIOMES_BY_REGION.get(b.region).push(b);
+}
+
+export function biomeFor(c, ctx, list = DRAWN_BIOMES) {
+  // The region pass is indexed, so it looks at the handful of biomes sharing this region rather than all of them.
+  const own = c.region && BIOMES_BY_REGION.get(c.region.id);
+  if (own) {
+    const hit = own.find((b) => biomeMatches(b, c, ctx));
+    if (hit) return hit;
+  }
+  return list.find((b) => biomeMatches(b, c, ctx)) || null;
+}
+
+// The biomes that can possibly match along a line of latitude, split by surface. Belt and latitude are fixed for a
+// whole row, so filtering once per row keeps the per-texel scan short, and splitting land from water matters more
+// than anything else: most of the planet is ocean, and an unsplit list makes every sea texel walk all 38 land
+// biomes first. A biome naming both a region and a belt stays in the list even when the belt is wrong, because it
+// can still match by its region.
+export function biomeCandidates(lat, latZone) {
+  const usable = DRAWN_BIOMES.filter((b) => {
+    if (b.belt && !b.region && b.belt !== latZone?.id) return false;
+    if (b.absLat && (Math.abs(lat) < b.absLat[0] || Math.abs(lat) > b.absLat[1])) return false;
+    return true;
+  });
+  return {
+    land: usable.filter((b) => b.group === 'land'),
+    water: usable.filter((b) => b.group === 'sea' || b.group === 'fresh'),
+  };
+}
+
+// The patches that also cover a point but are never drawn: river corridors, the splash zone, the midwater and the
+// abyss below it, and the air overhead. Shown in the info panel under "Also here".
+export function azonalFor(c, ctx = {}) {
+  return AZONAL_BIOMES.filter((b) => {
+    if (b.always) return true;
+    if (b.river) return Boolean(ctx.river) && (b.river === true || b.river === ctx.river);
+    if (b.lake) return ctx.lake === b.lake;
+    return biomeMatches(b, c, ctx);
+  });
+}
+
+// Distance in km to the nearest coast, per texel of the zone grid, by a multi-source flood from every cell that
+// borders the other surface class. Capped, because the only question asked of it is "within COAST_KM or not".
+export function coastDistance({ elev, width, height }, seaLevel, step = 2, maxKm = COAST_KM * 1.5) {
+  const w = Math.floor(width / step);
+  const h = Math.floor(height / step);
+  const dist = new Float32Array(w * h).fill(Infinity);
+  const wet = new Uint8Array(w * h);
+  const half = step >> 1;
+
+  for (let y = 0; y < h; y++) {
+    const srcRow = Math.min(height - 1, y * step + half) * width;
+    for (let x = 0; x < w; x++) {
+      wet[y * w + x] = elev[srcRow + Math.min(width - 1, x * step + half)] < seaLevel ? 1 : 0;
+    }
+  }
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const right = y * w + ((x + 1) % w);
+      const down = y + 1 < h ? (y + 1) * w + x : -1;
+      if (wet[i] !== wet[right] || (down >= 0 && wet[i] !== wet[down])) dist[i] = 0;
+    }
+  }
+
+  // Two-pass chamfer transform: one sweep down and one up, each relaxing from the four neighbours already seen.
+  // Straight O(n) with no queue. The pair runs twice so distances also propagate across the 0°E seam.
+  const dLat = (Math.PI * PLANET_RADIUS_KM) / h;
+  const straight = new Float64Array(h);
+  const diagonal = new Float64Array(h);
+  for (let y = 0; y < h; y++) {
+    const lat = 90 - ((y + 0.5) * 180) / h;
+    straight[y] = (2 * Math.PI * PLANET_RADIUS_KM * Math.cos(lat * DEG)) / w;
+    diagonal[y] = Math.sqrt(straight[y] * straight[y] + dLat * dLat);
+  }
+  const relax = (i, from, cost) => {
+    const next = dist[from] + cost;
+    if (next < dist[i] && next <= maxKm) dist[i] = next;
+  };
+
+  for (let pass = 0; pass < 2; pass++) {
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      const prev = (y - 1) * w;
+      for (let x = 0; x < w; x++) {
+        const i = row + x;
+        const west = row + ((x - 1 + w) % w);
+        relax(i, west, straight[y]);
+        if (y > 0) {
+          relax(i, prev + x, dLat);
+          relax(i, prev + ((x - 1 + w) % w), diagonal[y]);
+          relax(i, prev + ((x + 1) % w), diagonal[y]);
+        }
+      }
+    }
+    for (let y = h - 1; y >= 0; y--) {
+      const row = y * w;
+      const next = (y + 1) * w;
+      for (let x = w - 1; x >= 0; x--) {
+        const i = row + x;
+        const east = row + ((x + 1) % w);
+        relax(i, east, straight[y]);
+        if (y < h - 1) {
+          relax(i, next + x, dLat);
+          relax(i, next + ((x + 1) % w), diagonal[y]);
+          relax(i, next + ((x - 1 + w) % w), diagonal[y]);
+        }
+      }
+    }
+  }
+  return { dist, width: w, height: h };
 }
 
 // Local weather for a classified point: latitude belt values, adjusted for altitude (land only),
@@ -290,7 +446,7 @@ function hash01(...ints) {
 // Possible weather at a classified point `c` with annual climate `w` (pointClimate) under `sun` (sunAt).
 // Temperatures and humidity follow the season and the hour; the sky is a plausible sample, the same
 // for the same place and sol.
-export function momentWeather(c, w, sun) {
+export function momentWeather(c, w, sun, biome = null) {
   const rain = w.rainSeason;
   const curves = seasonalCurves(c.lat, c.isWater, rain.type);
   const day = dayOfYear(sun);
@@ -329,6 +485,12 @@ export function momentWeather(c, w, sun) {
     if (!isDay && conditions !== 'Overcast') conditions += ' night';
   }
 
+  // A suggested wind: a value inside the biome's range, drawn with the same hash as the sky, so it is steady for a
+  // place and a sol but moves through the year. Waves follow biomes.md §1.1 for a fully developed sea.
+  const range = biome?.wind?.speed ?? [2, 8];
+  const windSpeed = range[0] + (range[1] - range[0]) * hash01(cellLon, cellLat, day, 2);
+  const waves = c.isWater && windSpeed > 0 ? { height: 0.05 * windSpeed ** 2, period: 1.9 * windSpeed } : null;
+
   let season = hemisphereSeason(c.lat, sun.ls);
   if (rain.strength > 0 && seasonFactor > 0.25) season += ', wet season';
   if (rain.strength > 0 && seasonFactor < -0.25) season += ', dry season';
@@ -347,6 +509,11 @@ export function momentWeather(c, w, sun) {
     tempLow: tempMean - swing,
     rh,
     rainChance,
+    rainsToday,
+    rainingNow,
+    windSpeed,
+    windText: biome?.wind?.text ?? w.wind,
+    waves,
     conditions,
     season,
     seaIce: c.isWater ? seaIceCover(c.lat, day) : 0,
@@ -550,7 +717,8 @@ function boxBlur(src, tmp, width, height, r) {
 // premultiplied RGBA grids, `land` and `water`. Each surface class is blurred on its own and normalised
 // by its mask, so colours blend between regions (and fade into areas without a region) but never across
 // the coastline. Each grid also reaches a little past the coast, which keeps linear filtering clean.
-export function buildRegionColors(
+export function buildZoneColors(
+  zones,
   { ids, width: idWidth, height: idHeight },
   { elev, width: srcWidth, height: srcHeight },
   seaLevel,
@@ -561,8 +729,9 @@ export function buildRegionColors(
   const width = Math.floor(idWidth / scale);
   const height = Math.floor(idHeight / scale);
   const n = width * height;
-  const land = REGIONS.map((r) => hexToRgb(r.landColor ?? r.seaColor));
-  const water = REGIONS.map((r) => hexToRgb(r.seaColor));
+  // Regions carry a colour per surface class; a biome is either land or sea and carries one.
+  const land = zones.map((z) => hexToRgb(z.landColor ?? z.color ?? z.seaColor));
+  const water = zones.map((z) => hexToRgb(z.seaColor ?? z.color ?? z.landColor));
   // Per class: red, green, blue (colour × coverage), coverage, mask.
   const classes = [0, 1].map(() => Array.from({ length: 5 }, () => new Float32Array(n)));
   const idHalf = scale >> 1;
@@ -614,7 +783,8 @@ export function buildRegionColors(
 
 // Zone index per texel for an overlay layer, sampled every `step` source pixels.
 // Row 0 is 90°N and column 0 is 0°E, like the elevation grid.
-export function buildZoneIds({ elev, width, height }, seaLevel, layer, step = 2) {
+export function buildZoneIds(data, seaLevel, layer, step = 2, coastKm = null) {
+  const { elev, width, height } = data;
   const w = Math.floor(width / step);
   const h = Math.floor(height / step);
   const ids = new Uint8Array(w * h);
@@ -623,6 +793,12 @@ export function buildZoneIds({ elev, width, height }, seaLevel, layer, step = 2)
   const index = new Map(LAYERS[layer].zones.map((zone, i) => [zone, i + 1]));
   const p = makePoint(0, 0);
   const half = step >> 1;
+  // Reused for every texel: allocating a classified point per texel dominates the cost over a million of them.
+  const cell = { lon: 0, lat: 0, altitude: 0, isWater: false, depth: 0, latZone: null, vertZone: null, region: null };
+  const cellCtx = { coastKm: 0 };
+  // Only the biome layer splits coast from interior. The caller usually has the field already: building it here
+  // as well would compute the slowest part of the rebuild twice.
+  const coast = layer !== 'biomes' ? null : (coastKm ?? coastDistance(data, seaLevel, step).dist);
 
   for (let y = 0; y < h; y++) {
     const lat = 90 - ((y + 0.5) * 180) / h;
@@ -637,16 +813,33 @@ export function buildZoneIds({ elev, width, height }, seaLevel, layer, step = 2)
 
     const lines = vegetationLines(latZone);
     const candidates = COMPILED_REGIONS.filter((c) => lat >= c.latMin && lat <= c.latMax);
+    const biomeRow = layer === 'biomes' ? biomeCandidates(lat, latZone) : null;
     for (let x = 0; x < w; x++) {
       const altitude = elev[srcRow + Math.min(width - 1, x * step + half)] - seaLevel;
       let zone;
       if (layer === 'altitude') {
         zone = verticalZoneFor(altitude, lines);
       } else {
-        setPoint(p, ((x + 0.5) * 360) / w, lat);
-        zone = findRegion(candidates, p, altitude < 0, altitude);
+        const lon = ((x + 0.5) * 360) / w;
+        setPoint(p, lon, lat);
+        const isWater = altitude < 0;
+        const region = findRegion(candidates, p, isWater, altitude);
+        if (layer === 'biomes') {
+          cell.lon = lon;
+          cell.lat = lat;
+          cell.altitude = altitude;
+          cell.isWater = isWater;
+          cell.depth = isWater ? -altitude : 0;
+          cell.region = region;
+          cell.latZone = latZone;
+          cell.vertZone = verticalZoneFor(altitude, lines);
+          cellCtx.coastKm = coast[out + x];
+          zone = biomeFor(cell, cellCtx, isWater ? biomeRow.water : biomeRow.land);
+        } else {
+          zone = region;
+        }
       }
-      ids[out + x] = zone ? index.get(zone) : 0;
+      ids[out + x] = zone ? index.get(zone) ?? 0 : 0;
     }
   }
   return { ids, width: w, height: h };

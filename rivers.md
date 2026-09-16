@@ -15,7 +15,8 @@ Rivers here look different from Earth's (`planet_geography.md` §4.5):
   and fills the next.
 
 Discharge is the yearly mean in m³/s. Lengths follow the main stem and cross lakes in a straight line. Elevations are
-relative to the planet's sea level (+2,000 m above the Mars datum). Biome codes refer to `biomes.md`.
+relative to the planet's sea level (+2,000 m above the Mars datum). Biome codes refer to `biomes.md`; the R codes are
+its river biomes (§5), which describe what each kind of reach is like to live in.
 
 ---
 
@@ -23,13 +24,13 @@ relative to the planet's sea level (+2,000 m above the Mars datum). Biome codes 
 
 | # | River | Source | Mouth | Length | Basin | Mean discharge | Earth comparison | Regime | Biomes |
 |---|---|---|---|---|---|---|---|---|---|
-| 1 | Solis River | 10.6°S 280.4°E, +2,080 m | 28.6°S 299.6°E | ~1,760 km | 3.03 M km² | 49,700 m³/s | larger than the Congo | southern-summer floods, buffered by two great lakes | L02, L05, L01, S14 |
-| 2 | Thaumasia River | 30.4°S 290.6°E, +3,500 m | 30.6°S 298.9°E | ~880 km | 0.24 M km² | 10,300 m³/s | Ob | sharp southern-summer floods | L03, L02, L01, S14 |
-| 3 | Sabaea River | 9.9°S 52.6°E, +810 m | 7.1°S 44.9°E | ~610 km | 0.18 M km² | 7,650 m³/s | Volga | double equatorial peak, lake-buffered | L26, S01 |
-| 4 | Hebes River | 3.6°S 282.6°E, +2,820 m | 0.6°S 281.4°E | ~220 km | 0.07 M km² | 5,300 m³/s | Niger | very steady (deep lake) | L03, L02, L17, S01 |
-| 5 | Tyrrhena River | 10.4°S 85.1°E, +1,370 m | 5.6°S 89.4°E | ~440 km | 0.09 M km² | 4,700 m³/s | Niger | double equatorial peak, lake-buffered | L26, S01 |
-| 6 | Tholus River | 5.9°N 265.1°E, +1,640 m | 10.4°N 269.4°E | ~440 km | 0.26 M km² | 4,300 m³/s | a little under the Niger | flashy, double equatorial peak | L02, L01, S01 |
-| 7 | Pavonis River | 4.6°N 245.6°E, +1,700 m | 15.4°N 240.1°E | ~930 km | 0.32 M km² | 3,400 m³/s | Zambezi | two wet seasons along its course | L04, L26, L14, S02 |
+| 1 | Solis River | 10.6°S 280.4°E, +2,080 m | 28.6°S 299.6°E | ~1,760 km | 3.03 M km² | 49,700 m³/s | larger than the Congo | southern-summer floods, buffered by two great lakes | L02, R02, R06, R05, R04, L05, L01, R01, R08, R09, S14 |
+| 2 | Thaumasia River | 30.4°S 290.6°E, +3,500 m | 30.6°S 298.9°E | ~880 km | 0.24 M km² | 10,300 m³/s | Ob | sharp southern-summer floods | L03, R02, R06, L02, L01, R01, R08, R09, S14 |
+| 3 | Sabaea River | 9.9°S 52.6°E, +810 m | 7.1°S 44.9°E | ~610 km | 0.18 M km² | 7,650 m³/s | Volga | double equatorial peak, lake-buffered | L26, R06, R04, R08, R09, S01 |
+| 4 | Hebes River | 3.6°S 282.6°E, +2,820 m | 0.6°S 281.4°E | ~220 km | 0.07 M km² | 5,300 m³/s | Niger | very steady (deep lake) | L03, L02, R02, R06, L17, S10, S01 |
+| 5 | Tyrrhena River | 10.4°S 85.1°E, +1,370 m | 5.6°S 89.4°E | ~440 km | 0.09 M km² | 4,700 m³/s | Niger | double equatorial peak, lake-buffered | L26, R06, R04, R01, R08, R09, S01 |
+| 6 | Tholus River | 5.9°N 265.1°E, +1,640 m | 10.4°N 269.4°E | ~440 km | 0.26 M km² | 4,300 m³/s | a little under the Niger | flashy, double equatorial peak | L02, L01, R01, R08, R09, S01 |
+| 7 | Pavonis River | 4.6°N 245.6°E, +1,700 m | 15.4°N 240.1°E | ~930 km | 0.32 M km² | 3,400 m³/s | Zambezi | two wet seasons along its course | L04, R03, L26, R01, L14, R08, R09, S02 |
 
 Earth rivers for scale (mean discharge): Amazon ~209,000, Congo ~41,000, Ob ~12,500, Volga ~8,000, Niger ~5,600,
 Zambezi ~3,400, Nile ~2,800 m³/s.
@@ -84,12 +85,15 @@ The great river of the planet: a chain of lakes on the eastern side of Tharsis, 
 - **Mouth.** A broad, cuspate delta pushing a muddy plume into the drowned highland sea (S14). It is exposed to
   trade-wind waves and summer storm surges.
 - **Life and biomes.**
-  - **Source:** in the lower escarpment rainforest (L02).
+  - **Source:** a montane torrent (R02) off the chasma wall, in the lower escarpment rainforest (L02).
   - **Lake Solis:** its western shores border the plateau-margin savanna and steppe (L04, L05). Its eastern shores lie
     in escarpment forest.
-  - **Lower course:** through the coastal rainforest (L01).
-  - **Lakes as biomes:** Lake Solis and Lake Thaumasia are freshwater inland seas, a biome type not yet in
-    `biomes.md`. Their calm surfaces are the only large still water on Tharsis outside the sheltered side chasmata.
+  - **Rim gorge:** the one steep reach is a spillway stair (R04) through the Thaumasia rim.
+  - **Lower course:** a braided corridor (R01) through the coastal rainforest (L01), ending in a cuspate delta (R08)
+    and a muddy plume (R09).
+  - **Lakes as biomes:** Lake Solis and Lake Thaumasia are freshwater inland seas (R05), and the deep trough lakes
+    above them are R06. Their calm surfaces are the only large still water on Tharsis outside the sheltered side
+    chasmata.
 - **Long term.**
   - **Sea level:** at 100 m lower or higher, the mouth moves only 13–26 km, discharge changes by at most 4%, and
     98–100% of the main stem is unchanged. The lake levels are set by rock spill points, not by the ocean.
@@ -121,8 +125,9 @@ A short, powerful coastal river off the Thaumasia highlands, 220 km south of the
     each monsoon cloudburst; the lower lake takes the edge off the peak.
 - **Mouth.** A cuspate delta on the drowned highland sea (S14), close enough to the Solis delta that their muddy plumes
   merge along the coast.
-- **Life and biomes.** Cloud forest in the upper gorge (L03), lower escarpment rainforest (L02), coastal rainforest
-  (L01), then the sea (S14).
+- **Life and biomes.** A montane torrent (R02) through cloud forest in the upper gorge (L03), then the lake string
+  (R06) and a braided corridor (R01) through lower escarpment rainforest (L02) and coastal rainforest (L01), ending in
+  a cuspate delta (R08) whose plume (R09) merges with the Solis River's in the sea (S14).
 - **Long term.** At ±100 m sea level the mouth moves 25–41 km, discharge stays within 0.93–1.12 of today's and 95–100%
   of the main stem is unchanged.
 
@@ -150,9 +155,10 @@ A textbook beaded river: a chain of crater lakes linked by short spillway gorges
 - **Mouth.** A small cuspate delta on the warm equatorial ocean (S01).
 - **Life and biomes.**
   - Evergreen rainforest on the crater rims and the gorges (L26).
-  - Deep, still crater lakes, each with its own shoreline forest.
-  - The spillway gorges are the only links between lakes, which suits the "species pump" of isolated crater
+  - Deep, still crater lakes (R06), each with its own shoreline forest.
+  - The spillway gorges (R04) are the only links between lakes, which suits the "species pump" of isolated crater
     communities described in `planet_geography.md` §4.10.
+  - A small cuspate delta (R08) and its plume (R09) on the equatorial ocean.
 - **Long term.** Identical at 100 m lower sea level. At 100 m higher, the lowest lakes become bays: the mouth moves
   62 km, discharge is 95% of today's and 88% of the main stem is unchanged.
 
@@ -181,9 +187,11 @@ The shortest river on the list and the most dramatic: it ends in a waterfall abo
 - **Mouth.** No delta. The river falls into deep, sheltered water, and the drifting mist feeds the forests on the
   surrounding walls.
 - **Life and biomes.**
-  - Cloud forest and lower escarpment rainforest (L03, L02) on the plateau.
-  - Cathedral forest (L17) on the walls of Hebes Chasma.
-  - The mist zone below the falls is permanently saturated, the kind of shelter the sky-nets of the side chasmata need.
+  - Cloud forest and lower escarpment rainforest (L03, L02) on the plateau, cut by a steep torrent (R02).
+  - Lake Hebes is the deepest fresh water on the planet (R06), under the cathedral forest (L17) on the walls of Hebes
+    Chasma.
+  - The mist zone below the falls (R02) is permanently saturated, the kind of shelter the sky-nets of the side
+    chasmata need.
 - **Long term.** Exactly the same at ±100 m sea level (no mouth shift, discharge within 1%). Its lake level is fixed
   by the rock rim, so it is the most stable river on the list.
 - **Note.** `biomes.md` (S10) and the globe put Hebes water at sea level, because the map floods every point below
@@ -208,7 +216,9 @@ A lake-chain river on the northern edge of the southern highlands, facing Isidis
   - **Discharge:** 4,700 m³/s. About 21% evaporates, mostly from the big lake.
   - **Seasons:** the two ITCZ rain peaks are largely absorbed by the lakes.
 - **Mouth.** A short delta on the equatorial ocean (S01), facing the Isidis basin to the north.
-- **Life and biomes.** Equatorial highland rainforest coast (L26), with a large calm lake in its middle course.
+- **Life and biomes.** Equatorial highland rainforest coast (L26), with a large calm lake (R06) in its middle course,
+  a narrow spillway (R04) into the deep coastal crater lake (R06), then a short rainforest corridor (R01), a delta
+  (R08) and its plume (R09).
 - **Long term.** Unchanged at ±100 m sea level (no mouth shift, same discharge, same main stem).
 
 ## 6. Tholus River
@@ -233,8 +243,9 @@ The one major river without lakes: a straight, fast run down the north-eastern s
   - **Floods:** with no lakes, and rain arriving in a few very heavy events, it is the flashiest river on the list.
     Its channels shift after every big storm.
 - **Mouth.** A wave-dominated cuspate delta near the equatorial ocean (S01), on the approaches to Chryse.
-- **Life and biomes.** Lower escarpment rainforest (L02), then coastal rainforest (L01). Its gravel bars and shifting
-  braids are pioneer ground for fast-growing trees.
+- **Life and biomes.** Lower escarpment rainforest (L02), then coastal rainforest (L01), and a rainforest corridor
+  (R01) the whole way, since it has no lakes. Its gravel bars and shifting braids are pioneer ground for fast-growing
+  trees; it ends in a cuspate delta (R08) and a plume (R09).
 - **Long term.** At ±100 m sea level the mouth moves 15–33 km, discharge stays within 0.97–1.06 of today's and 92–100%
   of the main stem is unchanged.
 
@@ -261,10 +272,13 @@ The long river of north-western Tharsis, crossing from the equatorial rain belt 
 - **Mouth.** A strongly wave-dominated delta on the northern trade-wind ocean (S02). The 4–5.5 m trade seas push its
   sediment along the coast into long beach ridges.
 - **Life and biomes.**
-  - Plateau-margin savanna at the source (L04).
-  - The north-west Tharsis patch of equatorial rainforest (L26).
-  - The north-west Tharsis lee coast (L14), where it is the main evergreen corridor through otherwise leafless
+  - Plateau-margin savanna at the source (L04), where it runs as a gallery corridor (R03) past its three small lakes
+    (R06).
+  - The north-west Tharsis patch of equatorial rainforest (L26), where it is a rainforest corridor (R01).
+  - The north-west Tharsis lee coast (L14), where it is the main evergreen corridor (R03) through otherwise leafless
     dry-season forest.
+  - A strongly wave-built delta (R08) with long beach ridges, and a plume (R09) carried down-coast by the trade
+    current.
 - **Long term.** At ±100 m sea level the mouth moves 15–44 km, discharge stays within 0.88–1.07 of today's and 94–98%
   of the main stem is unchanged.
 
@@ -303,7 +317,7 @@ The long river of north-western Tharsis, crossing from the equatorial rain belt 
   scale.
 
 **Inland rivers and closed lakes.** The largest rivers that never reach the sea end in lakes that lose all their inflow
-to evaporation:
+to evaporation. These are the terminal salt lakes and playas of `biomes.md` (R07):
 
 | Closed lake | Centre | Area | Surface | Depth | Inflow | Notes |
 |---|---|---|---|---|---|---|

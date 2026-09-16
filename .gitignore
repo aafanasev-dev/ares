@@ -1,3 +1,4 @@
 # Raw MOLA download used by tools/prepare_data.py (32 MB); data/elevation.* are committed.
 data/raw/
 *.part
+__pycache__/

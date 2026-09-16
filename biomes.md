@@ -1,13 +1,14 @@
 # Biomes of Ares
 
-A **biome** is a part of the land or the sea with a similar climate, vegetation and fauna.
+A **biome** is a part of the land, the fresh water or the sea with a similar climate, vegetation and fauna.
 
 It is finer than the layers on the map:
 - **Climate belts** (latitude) set the base temperature, rain and wind.
 - **Regional climates** (`REGIONS` in `geography.js`) modify them in named places.
 - **Biomes** split a regional climate further by what matters to living things:
   - on land: coast or interior, height, shelter and water;
-  - at sea: surface temperature, humidity and wind (and therefore waves), then depth and ice.
+  - at sea: surface temperature, humidity and wind (and therefore waves), then depth and ice;
+  - in fresh water: a river or a lake carries its own habitat into every biome it crosses (§5).
 
 The facts come from `planet_geography.md`. Areas were measured from the MOLA grid with the sea at +2,000 m above the
 Mars datum; there, "coast" means within 250 km of the sea. Elevations and depths are relative to sea level. Figures
@@ -42,8 +43,8 @@ marked *est.* are not in `planet_geography.md`: they are estimates derived from 
    | North polar | sea level | 2.2 km |
    | South polar | sea level | 0.6 km |
 
-4. Look for **azonal patches** that cut across all of the above: river corridors, crater bowls, salt flats and the
-   surf zone.
+4. Look for **azonal patches** that cut across all of the above: river corridors (R01–R04), lakes (R05–R07), river
+   mouths and their plumes (R08–R09), crater bowls, salt flats and the surf zone.
 
 **At sea**
 1. **Surface temperature and ice**, from the belt.
@@ -176,6 +177,22 @@ another biome's area.
 | S18 | Surf and splash zone | every exposed coast | 0–30 m | — |
 | S19 | Migrating midwater | all deep water | 200–3,000 m | — |
 | S20 | Dead abyss and anoxic basins | all deep water | below ~500 m | — |
+
+### Fresh water and rivers
+
+| Code | Biome | Host biomes | Where | ≈ M km² |
+|---|---|---|---|---|
+| R01 | Rainforest river corridor and gravel braids | L01, L02, L18, L26, L27 | wet-forest floodplains | — |
+| R02 | Montane torrent and mist-fall walls | L02, L03, L17 | steep reaches and high falls | — |
+| R03 | Savanna and dry-coast gallery corridor | L04, L12, L13, L14, L28 | seasonally dry country | — |
+| R04 | Spillway gorge and knickpoint stair | L26, L29 | between the lakes of a beaded river | — |
+| R05 | Freshwater inland sea | L02, L04, L05 shores | Lake Solis, Lake Thaumasia | 0.87 |
+| R06 | Deep crater lake | L17, L26, L29 | beaded-river and chasma lakes | 0.1 |
+| R07 | Terminal salt lake and playa | L05, L12, L28, L32 | closed basins | 0.56 |
+| R08 | Cuspate delta and beach-ridge shore | L01, L14, L26, S18 | every open-coast river mouth | — |
+| R09 | River plume and brackish lens | S01, S02, S14 | offshore of every large mouth | — |
+
+The areas count only the named large bodies. `rivers.md` finds about 2,400 lakes in all.
 
 ### Air
 
@@ -1039,7 +1056,248 @@ rule in §1.1.
 
 ---
 
-## 5. The aerial biome
+## 5. Fresh water and river biomes
+
+A river is not just a line on the map. It carries its own water table, its own soil and its own food supply into
+whatever biome it crosses, so the ribbon along the water is a habitat in its own right: a light gap in a rainforest,
+an evergreen line across a brown savanna, a permanently misted wall below a fall. The seven long-term rivers and the
+lakes named here come from `rivers.md`.
+
+What makes these rivers different from Earth's:
+- Water flows at 62% of Earth's speed for the same slope, so a channel is **1.6× wider** for the same discharge:
+  about 7.7·√Q metres, which is ~1,700 m for the Solis River's 49,700 m³/s and ~500 m for the Tholus River's 4,300.
+- Nearly every river is **braided**, and fine silt settles 2.6× more slowly, so the water stays **turbid**. Almost
+  nothing grows in the channel itself; the food comes off the bank.
+- **Falls over ~500 m atomise into drifting mist** before they land. They barely erode, so they last for geological
+  ages, and they water everything downwind.
+- Heavy cratering makes most rivers **chains of lakes**: water fills a crater, spills over its lowest rim, fills the
+  next.
+- Mouths are **wave-dominated and cuspate**. There are no estuaries and no tidal flats.
+
+### 5.1 Reaches of the seven rivers
+
+| River | Source to sea |
+|---|---|
+| Solis | R02 → R06 (trough lakes) → R05 (Lake Solis, Lake Thaumasia) → R04 (the rim gorge) → R01 → R08 → R09, into S14 |
+| Thaumasia | R02 (upper gorge) → R06 (lake string) → R01 → R08 → R09, into S14 |
+| Sabaea | R06 and R04 alternating the whole way → R08 → R09, into S01 |
+| Hebes | R02 → R06 (Lake Hebes) → R02 (Hebes Falls), into S10 |
+| Tyrrhena | R06 → R04 (the spillway) → R06 (the coastal crater lake) → R01 → R08 → R09, into S01 |
+| Tholus | R01 the whole way, with no lakes → R08 → R09, into S01 |
+| Pavonis | R03 → R06 (source lakes) → R01 → R03 (the L14 corridor) → R08 → R09, into S02 |
+
+R07 belongs to the rivers that never reach the sea: see the closed lakes in `rivers.md`.
+
+### 5.2 River corridors
+
+#### R01 · Rainforest river corridor and gravel braids
+- **Place.** The floodplains of rivers crossing wet forest: the whole Tholus River (L02, L01), the lower Solis and
+  Thaumasia (L01), the lower Tyrrhena and Sabaea (L26) and the side gorges of the sound (L18). The ribbon is a few
+  hundred metres wide on a small river and ~3 km on the Solis.
+- **Climate.**
+  - The host biome's climate, a little cooler by day and damper at night: RH 90–100% over the water (*est.*).
+  - The gap is the only place in the forest with direct midday sun and a breeze along its axis.
+- **Vegetation and fauna.**
+  - A light gap with a wall on either side. The forest stands 150–250 m; on the bars, fast pioneers 20–40 m tall hold
+    the gravel until the next flood takes them.
+  - Braids shift after every big storm, so the corridor is a moving mosaic of even-aged stands. The Tholus River,
+    which has no lakes to buffer it, rebuilds its channels almost yearly.
+  - The water is too turbid to grow anything, so the food chain runs on leaf fall, fruit and the rain of small
+    animals from the banks.
+  - The heaviest large-animal traffic in the rainforest. Stilt-waders 60–80 m tall fish the shallows, gliders cross at
+    canopy height, and fish-eating flyers work the bars. Predators ambush at the bank: at 0.38 g nothing can sprint.
+- **Daily changes.**
+  - River fog lies in a band along the channel at dawn and burns off by mid-morning.
+  - The river rises in the evening, a few hours after the 13–19 h storms.
+- **Seasons.**
+  - Evergreen, with two flood peaks where the ITCZ passes twice (sols ~60–80 and ~190–210), or one violent perihelion
+    flood south of ~12°S (sols ~270–340).
+  - The flood that comes every few years strips the bars bare and starts the mosaic again.
+
+#### R02 · Montane torrent and mist-fall walls
+- **Place.** The steep reaches. The head of the Solis River off the Melas wall; the Thaumasia upper gorge, falling
+  ~14 m/km from +3,500 m to +660 m in 200 km; and the Hebes River, which ends in a fall of about 1,200 m over the
+  north rim of Hebes Chasma. They cut through L02, L03 and L17.
+- **Climate.**
+  - Temperature: 8–16 °C in the cloud-forest gorges, about 19 °C at the foot of Hebes Falls.
+  - RH ~100% in the spray. Mist from a fall over 500 m drifts for kilometres, so the walls downwind are far wetter
+    than the rain alone would make them.
+  - Loud, and windless except for the fall's own downdraught.
+- **Vegetation and fauna.**
+  - Spray-fed rock: mosses, cushion plants and heavy epiphytes grow on bare walls where nothing is rooted in soil.
+  - Clingers and filter feeders in the torrent. Nothing swims up a fall, so the water above each one holds its own
+    isolated community.
+  - Hebes Falls carves no plunge pool, so there is no basin below it: only a permanently drenched apron of boulders
+    under a white column visible for hundreds of kilometres.
+  - Its mist keeps the surrounding walls saturated, which is the shelter the sky-nets of L17 need.
+- **Daily changes.** The mist column leans with the afternoon wind. Flow peaks a few hours after the afternoon rain in
+  the unbuffered gorges; below a big lake it hardly changes at all.
+- **Seasons.** Violent in the Thaumasia gorge, where each monsoon cloudburst arrives as a wall of water. Steady on the
+  Hebes, whose lake holds hundreds of km³ for every metre of depth.
+
+#### R03 · Savanna and dry-coast gallery corridor
+- **Place.** Rivers crossing seasonally dry or arid country: the Pavonis River through the drought-deciduous
+  north-west coast (L14), the plateau-margin reaches (L04), the beaded chains of the southern savanna (L28) and the
+  wetland bands where a river bleeds into desert (L12, L13). L06 is the same idea on glacier melt, dying into a playa;
+  this one is rain-fed and reaches the sea.
+- **Climate.**
+  - The host climate, except that the strip within about ten channel widths of the water keeps its water table all
+    year.
+  - RH 40–70% under the gallery canopy against 20–35% on the open plain in the dry season.
+  - Cold air pools in the valley at night, so there is more frost and more dawn fog than on the plain.
+- **Vegetation and fauna.**
+  - An evergreen ribbon 40–80 m tall through country that is leafless or brown for half the year: from above, a green
+    line drawn across a brown plain.
+  - Deep-rooted gallery trees, reed beds in the backwaters, and a sharp edge where the water table drops away.
+  - In the dry season the corridor holds the animals of the whole region. Hundred-tonne browsers on thin legs and
+    turgor giants come down to drink, and every predator waits in the reeds.
+  - In dry country the river loses water as it goes, over a wetland band about ten times the channel width, so the
+    ribbon narrows downstream and the smaller rivers end in R07.
+- **Daily changes.**
+  - Valley fog at dawn. The bank is crowded at dawn and dusk and empty at noon.
+  - Dust devils 5–10 km tall cross the plain on either side.
+- **Seasons.**
+  - The flood comes with the region's wet season and can double the channel width for a few sols.
+  - The plain greens within days of the first storm, and for a few months the corridor stops being special.
+
+#### R04 · Spillway gorge and knickpoint stair
+- **Place.** The short, steep links between the lakes of a beaded river: the Sabaea River's whole course, nearly level
+  at ~1.3 m/km between lakes but stepping down through gorges with a waterfall at the head of each; the Tyrrhena
+  spillway; the Solis River's gorge through the Thaumasia rim, ~860 m in 180 km; and the crater-chain gorges of L29.
+- **Climate.** The host climate in a slot: still air, spray, and RH 10–20 points above the plain above (*est.*).
+- **Vegetation and fauna.**
+  - Gallery forest in the slot, taller and darker than anything on the rim.
+  - The gorge is the only path from one lake to the next, so it is the whole of the species pump of L29: dwarf and
+    giant variants of one lineage live in neighbouring lakes, a single rim apart.
+  - The waterfall at each gorge head is a one-way gate. Things travel downstream easily and upstream never, unless
+    they fly.
+  - Knickpoints retreat upstream over geological time. When one cuts back through a rim, the lake above it drains.
+- **Daily changes.** Little, beyond fog in the slot at dawn.
+- **Seasons.** In the wet season the chain flows and the lakes spill; in the dry season the gorges fall to a trickle
+  and the lakes are cut off from each other. Over the precession cycle the whole network connects and disconnects.
+
+### 5.3 Lakes
+
+#### R05 · Freshwater inland sea
+- **Place.** The two great lakes of the Solis River. **Lake Solis** is 761,000 km² and up to 1,890 m deep, larger than
+  the Caspian Sea, with its surface at +1,290 m; **Lake Thaumasia** is 104,000 km², one step lower at +940 m. Both
+  stand in closed basins whose level is set by a rock spill point, not by the ocean.
+- **Temperature.** Surface about 17 °C: around 23 °C in summer and 12 °C in winter. It damps the season like a small
+  ocean, in a belt that otherwise has a sharp one.
+- **Humidity and rain.** RH 50–70% over the water (*est.*), in a basin that gets under 100 mm/yr on its dry western
+  side and 3,000–4,000 mm/yr on the escarpment to the east. The lake evaporates ~25,000 m³/s, more than half of what
+  flows in, and that water falls again downwind.
+- **Wind and waves.** Steppe winds of 6–10 m/s (*est.*) over 800 km of fetch raise 2–5 m seas at 12–19 s: real surf on
+  a freshwater shore, with no tide and no swell arriving from outside.
+- **Life.**
+  - Fresh, cool and open, with no connection to the ocean and none to any other lake. Everything in it is endemic.
+  - Wave-cut cliffs and long gravel beaches on the windward shore. The western shores are dry steppe and savanna
+    (L04, L05) and the eastern shores are escarpment forest (L02), so one lake has a desert coast and a rainforest
+    coast.
+  - Flyers commute to the middle of the lake, which is well beyond sight of land.
+- **Daily changes.** Calm at dawn; a lake breeze and whitecaps by afternoon. The shore is 5–8 K milder at night than
+  the plateau behind it.
+- **Seasons.** The level moves little, because the spill point fixes it, but the summer flood raises it enough to
+  drown the beaches. With a gentler monsoon in ~25,500 years both lakes will steady and shrink.
+
+#### R06 · Deep crater lake
+- **Place.** The lakes strung along the beaded rivers. The Sabaea River's main lake is 24,600 km² and 875 m deep, and
+  one of its neighbours is only 865 km² but nearly 700 m deep; the Tyrrhena main lake is 40,600 km² and its coastal
+  crater lake 1,650 m deep; the Solis trough lakes reach 1,180 m; and **Lake Hebes**, 26,700 km² and up to 7,260 m
+  deep, is the deepest fresh water on the planet. Shallower steps, like the Thaumasia River's 115 m lake, are the same
+  biome with a mixed water column and no dead layer.
+- **Temperature.** Surface 19–22 °C on the equatorial chains, with almost no season. Below the surface layer, 10–15 °C
+  and unchanging.
+- **Humidity and rain.** RH 80–90%, and higher in the walled lakes; the host biome's rain, 2,000–3,000 mm/yr on the
+  equatorial chains.
+- **Wind and waves.** The fetch inside a crater rim is short, so seas stay under 1 m, and the walled lakes are glassy.
+  Lake Hebes, 4 km below its rim, never feels a wind at all.
+- **Life.**
+  - Still, clear water over a dead deep. Below a few hundred metres it never turns over, so the floor is anoxic, as in
+    the sound (S09, S20).
+  - Pressure rises 2.6× more slowly than on Earth, so divers and swim-bladdered animals work the whole lit column
+    without trouble.
+  - Each lake is an island. A rim apart, one lineage appears as a dwarf in this bowl and a giant in the next; R04 is
+    the only door between them.
+  - Shoreline forest runs right down to the water, and the banks are the calmest large habitat in a rainforest.
+- **Daily changes.** Fog on the water at dawn, gone by mid-morning. Hardly any air swing.
+- **Seasons.** Almost none on the equatorial chains. Lake Hebes is so deep that the two rain peaks do not move its
+  level enough to see.
+
+#### R07 · Terminal salt lake and playa
+- **Place.** Where a river dies inland. The largest are the Terra Sirenum lake (104,000 km², 2,080 m deep, taking
+  2,760 m³/s), the southern Tharsis lake (130,000 km²), the Sabaea closed lake (60,000 km²) and the Syria lake
+  (96,000 km², up on the plateau at +4,330 m). They end the inland rivers of Tharsis, the southern savanna and the
+  subsidence deserts (L05, L12, L28, L32). L33 is the same thing at crater scale; L06 is its glacier-fed version.
+- **Temperature.** The host biome's, plus a few kelvin: dark brine and bare salt take up more sun than the land around
+  them.
+- **Humidity and rain.** Dry air over standing water. Everything that flows in evaporates, so the lake is never bigger
+  than this year's inflow.
+- **Wind and waves.** Shallow water on a flat floor keeps waves under 1 m, and the shoreline moves tens of kilometres
+  with the level, so nothing is ever cut into it.
+- **Life.**
+  - Brine. Salinity runs from drinkable at the inflow to crystallising at the far end, and each band has its own
+    specialists: microbial mats, filter feeders and brine swimmers.
+  - Huge flyer flocks. It is the only rich food in an arid region, and a safe one, because nothing heavy can wade far
+    over soft salt at 0.38 g.
+  - Salt-tolerant scrub and reed beds where the river comes in; bare, cracked evaporite everywhere else, in terraces
+    that record older and higher levels.
+  - This is the salt sink of its basin, which is part of why the rivers that do reach the sea keep their coasts fresh
+    (L27).
+- **Daily changes.** A humid haze and heavy shimmer at noon over a crust that stays damp underneath.
+- **Seasons.**
+  - The lake fills in the wet season and shrinks to a crust in the dry, laying down a new layer of salt each year.
+  - Over the precession cycle a gentle monsoon leaves some basins dry for centuries, while a violent one can raise a
+    playa into a lake deep enough to spill.
+
+### 5.4 Mouths
+
+#### R08 · Cuspate delta and beach-ridge shore
+- **Place.** Every river mouth on an open coast: the Solis and Thaumasia deltas on the drowned highland sea, close
+  enough that their plumes merge; the Tholus delta on the Chryse approaches; the Pavonis delta on the northern trade
+  ocean; and hundreds of smaller ones. The exception is L19, at the head of the sound, which is the planet's only
+  quiet, fine-grained delta.
+- **Climate.** The host biome's coastal climate, with an afternoon sea breeze and salt spray carried inland over the
+  ridges.
+- **Vegetation and fauna.**
+  - Waves are huge and tides about a third of Earth's, so the sea, not the river, builds the mouth. Every delta is a
+    blunt cusp of sand and gravel; there is not one estuary or tidal flat on the planet.
+  - Trade seas of 4–5.5 m drive sediment along the coast into long beach ridges. The Pavonis mouth has built tens of
+    kilometres of them.
+  - Behind the ridges lie abandoned channels, brackish ponds and swamp forest: the calm nursery ground the open mouth
+    cannot offer.
+  - Strand plants and pioneers hold the young ridges and forest takes the old ones, so the shore reads as stripes of
+    successively older vegetation.
+  - The channel jumps to a new course every few decades, stranding a whole ridge set.
+  - Storm surge is 2.6× Earth's and reaches surge height ÷ slope inland: 25 km on a 1 m/km delta plain.
+- **Daily changes.** Wave sets with periods up to 48 s work the front; the afternoon sea breeze drives spray over the
+  ridges.
+- **Seasons.** The river builds the delta out in the flood season and the storm season cuts it back. A mouth on a
+  monsoon coast does both in the same year.
+
+#### R09 · River plume and brackish lens
+- **Place.** The water offshore of every large mouth, and far more of it than on Earth. The Solis and Thaumasia plumes
+  merge into one band along the coast of S14; the Tholus, Tyrrhena and Sabaea plumes colour the equatorial ocean
+  (S01); the Pavonis plume is dragged down-coast by the trade ocean's narrow western boundary current (S02).
+- **Temperature.** One to three kelvin warmer than the sea around it in summer and colder in winter: it is a thin skin
+  of river water, so it follows the land rather than the ocean.
+- **Humidity and rain.** As in the host sea.
+- **Wind and waves.** The lens is buoyant enough to damp short chop, so the plume front shows as a slick, sharply
+  bounded band with steeper water on the seaward side.
+- **Life.**
+  - Silt settles 2.6× more slowly than on Earth, so the brown water reaches hundreds of kilometres offshore before it
+    clears, far beyond anything an Earth river manages.
+  - Inside the plume it is too dark to grow anything. At its edge, where the light returns and the river's nutrients
+    are still there, sits a permanent plankton bloom, and with it the divers and the pelagic soarers.
+  - A sharp, shallow halocline: fresh water above, ocean below, with little mixing and little exchange.
+  - The floor beneath is starved, as most of the deep sea is (S20): silt smothers it and little food falls through.
+- **Daily changes.** Small. The front is sharpest in the calm before dawn.
+- **Seasons.** The plume swells with the flood season and shrinks in the dry. A big monsoon flood pushes fresh water
+  far enough offshore to show from the aerial biome as a discoloured arc along the coast.
+
+---
+
+## 6. The aerial biome
 
 #### A01 · Aerial biome
 - **Place.** The air column 5–12 km above both land and sea. Giant soarers range from 3 to 15 km.
@@ -1059,20 +1317,29 @@ rule in §1.1.
 
 ---
 
-## 6. Differences from the current map
+## 7. Differences from the current map
 
-The map does not draw biomes yet, but it does draw seasonal sea ice with icebergs (S07, S08, S17), permanent land
-ice (L10, L22, L38) and seasonal snow, all following the day-of-year slider. Things to handle when it draws biomes:
+The map now draws biomes as its default layer, each in the colour of its vegetation or surface, and `biomes.js` is
+the machine-readable transcription of this file. 46 of the 68 biomes are drawn; the other 22 are azonal and appear in
+the info panel under "Also here". It also draws the seven rivers of `rivers.md` and their lakes, and seasonal sea ice
+with icebergs (S07, S08, S17), permanent land ice (L10, L22, L38) and seasonal snow, all following the day-of-year
+slider.
+
+What the map still does not capture:
 - **Daily range over the sea.** The info panel uses the belt value (8–15 K) over water too; open water should swing
   1–3 K.
 - **Plateau and alpine daily range.** The panel uses the equatorial belt's 8 K; thin, dry air should give 14–20 K
   (L05, L09, L21).
-- **Wind and waves.** The panel shows only descriptive wind text. It models neither wind speed nor waves.
-- **Coast vs interior and windward vs lee.** Neither split exists in `classify()`. L27/L28, L32/L33 and L12/L13 need a
-  distance-to-coast or exposure test.
-- **Unnamed land and seas.** L11, L14, L26 and S01, S14–S17 have no `REGIONS` entry; the map shows them only by
-  latitude belt.
-- **Azonal patches.** L06, L08, L19, L29, L35 and L37 are narrower than the region shapes and would need their own
-  masks.
+- **Windward versus lee.** The coast/interior split now exists (a distance-to-coast field, 250 km), but exposure does
+  not. Only L23/L24 are separated, and by longitude across the Elysium summit rather than by wind. L08 and L11, the
+  windward and lee halves of the Tharsis cones, are both azonal for the same reason.
+- **Azonal patches.** L06, L08, L11, L19, L29, L33, L35 and L37 are narrower than the region shapes, and the river
+  biomes R01–R04, R08 and R09 are narrower still: a corridor is one to a few channel widths wide, well under one
+  elevation pixel. They are listed in the panel instead of drawn, using the traced course in `data/rivers.json` to
+  decide when a point is on a river, at a mouth or inside a lake.
+- **Fresh water above sea level.** The elevation grid floods everything below +2,000 m and holds nothing above it, so
+  R05–R07 have no texels of their own: Lake Solis, Lake Thaumasia and the closed salt lakes are drawn only as the
+  outlines traced into `data/rivers.json`, and Hebes Chasma is still flooded to sea level rather than standing at its
+  own spill level of +1,230 m (see the note under Hebes in `rivers.md`).
 - **Data mismatch.** At +2 km, much of the southern crescent that the text describes as land is under water. That is
   why S14–S16 are so large; see "Known data mismatches" in `CLAUDE.md`.
